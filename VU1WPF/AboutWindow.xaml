@@ -1,0 +1,43 @@
+﻿<Window x:Class="VU1WPF.AboutWindow"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        Background="{DynamicResource MaterialDesignPaper}"
+        FontFamily="{materialDesign:MaterialDesignFont}"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:local="clr-namespace:VU1WPF"
+        mc:Ignorable="d"
+        Title="VU Dials - About The Demo App" Height="450" Width="600" ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen">
+
+    <!-- Main dial config canvas -->
+    <Canvas x:Name="cnvsMainCanvas" Margin="0,10,0,10">
+        <Grid Width="600" Height="{Binding ActualHeight, ElementName=cnvsMainCanvas}" HorizontalAlignment="Left" VerticalAlignment="Center">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="50" />
+                <RowDefinition Height="10" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="220" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="40" />
+            </Grid.RowDefinitions>
+
+            <Label Grid.Row="0" Content="VU Dials - About" Height="25" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,0"/>
+
+            <TextBlock Grid.Row="3" x:Name="txtAbout" HorizontalAlignment="Left" Margin="26,28,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="542" >
+                    This application is a simple demonstration designed to showcase some of the functionallity of the VU1 dials.<LineBreak/><LineBreak/>
+                    
+                    This application relies on LibreHardwareMonitor to pull usage information.<LineBreak/><LineBreak/>
+                    
+                    You can find more information at https://vudials.com
+            </TextBlock>
+
+            <Button Grid.Row="5" x:Name="btnClose" Content="Close" Width="120" Height="32" HorizontalAlignment="Center" Margin="0, 0, 0, 0" ToolTip="Demo App info" Click="btnCloseWindow"/>
+
+
+        </Grid>
+    </Canvas>
+
+
+</Window>

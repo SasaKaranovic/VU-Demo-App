@@ -1,0 +1,59 @@
+﻿<Window x:Class="VU1WPF.ThresholdsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:VU1WPF"
+        mc:Ignorable="d"
+        ResizeMode="NoResize"
+        Closing="Window_Closing"
+        Loaded="thresholdWindow_loaded"
+        Title="Dial Threshold Rules" Height="540" Width="450" WindowStartupLocation="CenterOwner">
+    <Grid>
+        <ComboBox x:Name="cbThresholds" HorizontalAlignment="Left" Margin="28,59,0,0" VerticalAlignment="Top" Width="372" SelectionChanged="cbRuleSelection_SelectionChanged">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock>
+                          <Run Text="When value is less or equal to "/>
+                          <Run Text="{Binding Threshold}"/>
+                          <Run Text="% set Red:"/>
+                          <Run Text="{Binding BacklightRed}"/>
+                          <Run Text=" Green:"/>
+                          <Run Text="{Binding BacklightGreen}"/>
+                          <Run Text=" Blue:"/>
+                          <Run Text="{Binding BacklightBlue}"/>
+                    </TextBlock>
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <Label Content="If dial value is less or equal to" HorizontalAlignment="Left" Margin="28,189,0,0" VerticalAlignment="Top"/>
+        <TextBox x:Name="txtValue" HorizontalAlignment="Left" Margin="193,189,0,0" TextWrapping="Wrap" Text="0" VerticalAlignment="Top" Width="28" PreviewTextInput="NumericTextBoxInput"/>
+        <Label Content="%" HorizontalAlignment="Left" Margin="226,189,0,0" VerticalAlignment="Top" RenderTransformOrigin="-0.244,0.577"/>
+        <Slider x:Name="sliderRed" HorizontalAlignment="Left" Margin="104,257,0,0" VerticalAlignment="Top" Width="279" Maximum="100" LargeChange="5" SmallChange="1" AutoToolTipPlacement="TopLeft" IsSnapToTickEnabled="True" />
+        <Label Content="Red" HorizontalAlignment="Left" Margin="28,253,0,0" VerticalAlignment="Top"/>
+        <Slider x:Name="sliderGreen" HorizontalAlignment="Left" Margin="104,298,0,0" VerticalAlignment="Top" Width="279" Maximum="100" LargeChange="5" SmallChange="1" AutoToolTipPlacement="TopLeft" IsSnapToTickEnabled="True" />
+        <Label Content="Green" HorizontalAlignment="Left" Margin="28,294,0,0" VerticalAlignment="Top"/>
+        <Slider x:Name="sliderBlue" HorizontalAlignment="Left" Margin="104,337,0,0" VerticalAlignment="Top" Width="279" Maximum="100" LargeChange="5" SmallChange="1" AutoToolTipPlacement="TopLeft" IsSnapToTickEnabled="True" />
+        <Label Content="Blue" HorizontalAlignment="Left" Margin="28,333,0,0" VerticalAlignment="Top"/>
+        <ComboBox x:Name="cbPreset" HorizontalAlignment="Left" Margin="104,385,0,0" VerticalAlignment="Top" Width="279" ItemsSource="{Binding backlightPresets}" SelectionChanged="cbBacklightPreset_SelectionChanged">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Name}"/>
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+        <Label Content="Preset" HorizontalAlignment="Left" Margin="28,386,0,0" VerticalAlignment="Top"/>
+        <Button Content="Delete rule" HorizontalAlignment="Left" Margin="299,103,0,0" VerticalAlignment="Top" Click="btnDeleteThreshold_click"/>
+
+        <Button Content="Create/update rule" HorizontalAlignment="Center" Margin="0,443,0,0" VerticalAlignment="Top" Click="btnSetThreshold_click"/>
+        <Label Content="Existing rules" HorizontalAlignment="Left" Margin="28,30,0,0" VerticalAlignment="Top" FontWeight="Bold"/>
+        <Label Content="Create new rule" HorizontalAlignment="Left" Margin="28,160,0,0" VerticalAlignment="Top" FontWeight="Bold"/>
+        <Label Content="Then set backlight color to" HorizontalAlignment="Left" Margin="28,218,0,0" VerticalAlignment="Top"/>
+
+
+
+
+
+    </Grid>
+</Window>

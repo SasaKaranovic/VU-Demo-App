@@ -1,0 +1,163 @@
+﻿<Window x:Class="VU1WPF.MainWindow"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        Background="{DynamicResource MaterialDesignPaper}"
+        FontFamily="{materialDesign:MaterialDesignFont}"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        xmlns:local="clr-namespace:VU1WPF"
+        mc:Ignorable="d"
+        Title="VU1 - Companion App" Height="600" Width="800" ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen" WindowStyle="None" Closing="mainWindow_Closing">
+    <Grid HorizontalAlignment="Right" Width="800">
+
+
+        <!-- Title bar canvas -->
+        <Canvas x:Name="cnvsTitleCanvas" Margin="0,0,0,379">
+            <Grid Width="{Binding ActualWidth, ElementName=cnvsTitleCanvas}" Height="30" HorizontalAlignment="Center" VerticalAlignment="Top">
+                <Label x:Name="lblTitle" Content="VU Dials - Demo App" FontWeight="Bold" FontFamily="Source Code Pro" Canvas.Left="295" VerticalAlignment="Center" HorizontalAlignment="Center" Height="24"/>
+                <Button x:Name="btnX" Content="X" HorizontalAlignment="Left" VerticalAlignment="Center" Width="38" Height="22" FontSize="10" BorderThickness="0,0,0,0" Click="btnX_Click" Canvas.Left="760" Canvas.Top="1" Margin="752,1,0,0" materialDesign:ButtonAssist.CornerRadius="2" ToolTip="Close">
+                    <Button.Background>
+                        <SolidColorBrush Color="{DynamicResource Primary500}"/>
+                    </Button.Background>
+                </Button>
+                <Button x:Name="btnMin" Content="_" HorizontalAlignment="Left" VerticalAlignment="Center" Width="38" Height="22" FontSize="10" BorderThickness="0,0,0,0" Click="btnMin_Click" Canvas.Left="715" Canvas.Top="1" Margin="709,1,0,0" materialDesign:ButtonAssist.CornerRadius="2" ToolTip="Minimize" >
+                    <Button.Foreground>
+                        <SolidColorBrush Color="{DynamicResource Accent100Foreground}"/>
+                    </Button.Foreground>
+                    <Button.Background>
+                        <SolidColorBrush Color="{DynamicResource Accent200Foreground}"/>
+                    </Button.Background>
+                </Button>
+                <Button x:Name="btnMinToTray" Content="T" HorizontalAlignment="Left" VerticalAlignment="Center" Width="38" Height="22" FontSize="10" BorderThickness="0,0,0,0" Click="btnMinToTray_Click" Canvas.Left="715" Canvas.Top="1" Margin="666,1,0,0" materialDesign:ButtonAssist.CornerRadius="2" ToolTip="Minimize to system tray" >
+                    <Button.Foreground>
+                        <SolidColorBrush Color="{DynamicResource Accent100Foreground}"/>
+                    </Button.Foreground>
+                    <Button.Background>
+                        <SolidColorBrush Color="{DynamicResource Accent200Foreground}"/>
+                    </Button.Background>
+                </Button>
+            </Grid>
+        </Canvas>
+
+
+        <!-- Dial list canvas -->
+        <Canvas x:Name="cnvsDialCanvas" Margin="0,46,551,0">
+            <Grid Width="{Binding ActualWidth, ElementName=cnvsDialCanvas}" Height="{Binding ActualHeight, ElementName=cnvsDialCanvas}">
+                <Label Content="Dial List" HorizontalAlignment="Center" VerticalAlignment="Top" Width="244" HorizontalContentAlignment="Center" FontSize="16" FontWeight="Bold"/>
+
+                <ListBox x:Name="lbDials" d:ItemsSource="{d:SampleData ItemCount=5}" SelectionChanged="lbDials_SelectionChanged" Canvas.Top="32" Height="410" Width="230" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,52,0,0" Background="#00000000" Style="{DynamicResource MaterialDesignListBox}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding FriendlyName}"/>
+                                <TextBlock Text="{Binding UID}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Canvas>
+
+        <!-- Main dial config canvas -->
+        <Canvas x:Name="cnvsMainCanvas" Margin="249,46,10,10">
+            <Grid Width="531" Height="{Binding ActualHeight, ElementName=cnvsMainCanvas}" HorizontalAlignment="Left" Canvas.Left="10" VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="50" />
+                    <RowDefinition Height="10" />
+                    <RowDefinition Height="30" />
+                    <RowDefinition Height="30" />
+                    <RowDefinition Height="30" />
+                    <RowDefinition Height="30" />
+                    <RowDefinition Height="30" />
+                    <RowDefinition Height="30" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="40" />
+                    <RowDefinition Height="40" />
+                    <RowDefinition Height="40" />
+                    <RowDefinition Height="40" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="40" />
+                    <RowDefinition Height="10" />
+                </Grid.RowDefinitions>
+
+                <Label Grid.Row="0" Content="Configure dial" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center"/>
+
+                <Label Grid.Row="2" Content="Dial Name:" Height="25" Width="100" HorizontalAlignment="Left" />
+                <TextBox Grid.Row="2" x:Name="txtlSelectedDialName" TextWrapping="Wrap" Text="" HorizontalAlignment="Left" VerticalAlignment="Center" Width="250" Margin="120,0,0,0"/>
+
+                <Label Grid.Row="3" Content="Dial UID:" Height="25" Width="100" HorizontalAlignment="Left" />
+                <Label Grid.Row="3" x:Name="lblSelectedDialUID" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center" Width="220" Margin="120,0,0,0" Content=""/>
+
+                <Label Grid.Row="4" Content="Metric:" Height="25" Width="100" HorizontalAlignment="Left" />
+                <Label Grid.Row="4" x:Name="lblCurrentMetric" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center" Width="390" Margin="120,0,0,0" Content=""/>
+
+                <Label Grid.Row="5" Content="Value:" Height="25" Width="100" HorizontalAlignment="Left" />
+                <Label Grid.Row="5" x:Name="lblCurrentPercent" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center" Width="50" Margin="120,0,0,0" Content=""/>
+                <Label Grid.Row="5" x:Name="lblCurrentValue" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center" Width="100" Margin="180,0,0,0" Content=""/>
+
+                <Label Grid.Row="6" Content="Min:" Height="25" Width="100" HorizontalAlignment="Left" />
+                <Label Grid.Row="6" x:Name="lblScalingMin" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center" Width="320" Margin="120,0,0,0" Content=""/>
+
+                <Label Grid.Row="7" Content="Max: " Height="25" Width="100" HorizontalAlignment="Left" />
+                <Label Grid.Row="7" x:Name="lblScalingMax" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center" Width="320" Margin="120,0,0,0" Content=""/>
+
+                <Label Grid.Row="9" Content="Metric Type" Width="100" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="9" x:Name="cbDialMetricCategory" Width="220" Height="25" HorizontalAlignment="Left" Margin="120,0,0,0" ItemsSource="{Binding}"  SelectionChanged="cbDialMetricCategory_SelectionChanged">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <Label Grid.Row="10" Content="Selected Metric" Width="100" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="10" x:Name="cbDialMetric" Width="220" Height="25" HorizontalAlignment="Left" Margin="120,0,0,0" ItemsSource="{Binding}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock>
+                                  <Run Text="{Binding Sensor.Name}"/>
+                                  <Run Text=" - "/>
+                                  <Run Text="{Binding Sensor.Hardware.Name}"/>
+                                </TextBlock>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Sensor.Identifier}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Grid.Row="10" x:Name="btnSave" Content="Save dial config" Width="140" Height="32" HorizontalAlignment="Left" Margin="370,4,0,4" ToolTip="Save dial settings" Click="btnSaveDialSettings_click"/>
+
+                <Label Grid.Row="11" Content="Metric Min" Width="100" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="11" x:Name="txtMinValue" TextWrapping="Wrap" Text="0" HorizontalAlignment="Left" VerticalAlignment="Center" Width="50" Margin="120,0,0,0" ToolTip="This value will be used as the dial's 0%" PreviewTextInput="NumericTextBoxInput" />
+
+                <Label Grid.Row="12" Content="Metric Max" Width="100" Height="25" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="12" x:Name="txtMaxValue" TextWrapping="Wrap" Text="100" HorizontalAlignment="Left" VerticalAlignment="Center" Width="50" Margin="120,0,0,0" ToolTip="This value will be used as the dial's 100%" PreviewTextInput="NumericTextBoxInput" />
+
+                <Button Grid.Row="14" x:Name="btnUploadImage" Content="Set image" Width="120" Height="32" HorizontalAlignment="Left" Margin="0, 0, 30, 0" ToolTip="Change dial background image" Click="btnChangeImage_click"/>
+                <Button Grid.Row="14" x:Name="btnSetRules" Content="Set rules" Width="120" Height="32" HorizontalAlignment="Left" Margin="135, 0, 30, 0" ToolTip="Set rules for how backlight should be linked to dial value" Click="btnSetDialRules_click"/>
+                <Button Grid.Row="14" x:Name="btnChangeColor" Content="Set color" Width="120" Height="32" HorizontalAlignment="Left" Margin="270, 0, 0, 0" ToolTip="Manually change dial background color" Click="btnChangeDialColor_click"/>
+                <Button Grid.Row="14" x:Name="btnAbout" Content="About" Width="120" Height="32" HorizontalAlignment="Right" Margin="0, 0, 0, 0" ToolTip="Demo App info" Click="btnAbout_click"/>
+            </Grid>
+        </Canvas>
+
+        <Button Click="btnRefreshDials_click" Content="{materialDesign:PackIcon Refresh}"
+          IsEnabled="{Binding DataContext.ControlsEnabled, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}"
+          Style="{StaticResource MaterialDesignFlatDarkButton}"
+                Width="100"
+          ToolTip="Reload the list of dials" Margin="6,518,680,10" Height="22" />
+
+        <Button x:Name="btnToggleDialUpdate" Click="btnToggleDialUpdate_click" Content="{materialDesign:PackIcon Pause}"
+          IsEnabled="{Binding DataContext.ControlsEnabled, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}"
+          Style="{StaticResource MaterialDesignFlatDarkButton}"
+                Width="100" HorizontalAlignment="Right"
+          ToolTip="Pause/Resume sending sensor values to VU1 server" Margin="6,518,558,10" Height="22" />
+
+        <Label Content="KaranovicResearch / Streacom" Height="20" HorizontalContentAlignment="Center" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="5, 0, 0, 5" Background="{x:Null}" Foreground="#FFB53B15" Width="239"/>
+    </Grid>
+</Window>

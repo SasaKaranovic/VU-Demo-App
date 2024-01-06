@@ -1,0 +1,67 @@
+name: Create Release
+
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    env:
+      App_Packages_Archive: VU1_Demo_App
+      Solution_Path: VU1WPF
+      Actions_Allow_Unsecure_Commands: true # Allows AddPAth and SetEnv commands
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 6.0.x
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.Solution_Path }}
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore ${{ env.Solution_Path }}
+
+    - name: Test
+      run: dotnet test --no-build --verbosity normal ${{ env.Solution_Path }}
+
+    # Upload build artifacts
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.App_Packages_Archive }}
+        path: ${{ env.Solution_Path }}\bin\Release\net6.0-windows\*
+      if: ${{ always() }}
+
+    # Create the release:  https://github.com/actions/create-release
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          Changes in this Release
+          - First Change
+          - Second Change
+        draft: false
+        prerelease: false
+
+    # Upload release asset:   https://github.com/actions/upload-release-asset
+    - name: Update release assets
+      id: upload-release-asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}  # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
+        asset_path: ${{ github.workspace }}/Artifacts/${{ env.App_Packages_Archive }}.zip
+        asset_name: ${{ env.App_Packages_Archive }}
+        asset_content_type: application/zip

@@ -1,0 +1,63 @@
+name: Build VU1 Demo App
+
+on:
+  [ workflow_dispatch, push]
+  # push:
+  #   branches: [ main ]
+  # pull_request:
+  #   branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    env:
+      App_Packages_Archive: VU1_Demo_Archive
+      App_Packages_Installer: VU1_Demo_Installer
+      Solution_Path: VU1WPF
+      Actions_Allow_Unsecure_Commands: true # Allows AddPAth and SetEnv commands
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 6.0.x
+    - name: Restore dependencies
+      run: dotnet restore ${{ env.Solution_Path }}
+
+    # Create artifacts folder
+    - name: Create Artifact Folder
+      run: New-Item -Path '${{ github.workspace }}' -Name "Artifacts" -ItemType "directory"
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore ${{ env.Solution_Path }}
+
+    - name: Test
+      run: dotnet test --no-build --verbosity normal ${{ env.Solution_Path }}
+
+    # Install NSIS
+    - name: Install NSIS
+      run: |
+        choco install nsis
+
+    - name: Create installer
+      run: |
+        makensis /DINSTALLEROUTPUT="${{ github.workspace }}\Artifacts\VU1-DemoApp-Installer.exe" /DDIRDIST="${{ github.workspace }}\${{ env.Solution_Path }}\bin\Release\net6.0-windows" /DDIRSOURCE="${{ github.workspace }}" ${{ github.workspace }}\installer\install.nsi
+
+    # Upload build artifacts
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.App_Packages_Archive }}
+        path: ${{ env.Solution_Path }}\bin\Release\net6.0-windows\*
+      if: ${{ always() }}
+
+    # Upload build artifacts
+    - name: Upload Installer
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.App_Packages_Installer }}
+        path: ${{ github.workspace }}\Artifacts\VU1-DemoApp-Installer.exe
+      if: ${{ always() }}
