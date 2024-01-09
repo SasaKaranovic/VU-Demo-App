@@ -30,6 +30,7 @@ using System.Text.RegularExpressions;
 using System.Globalization;
 using YamlDotNet.Core.Tokens;
 using System.Runtime.CompilerServices;
+using Microsoft.Win32;
 
 namespace VU1WPF
 {
@@ -46,6 +47,8 @@ namespace VU1WPF
         public List<ClassDialGUI> gDials = new List<ClassDialGUI>();
         public ClassDialGUI gCurrentlySelectedDial = new ClassDialGUI { FriendlyName = "", UID = "" };
         bool gDialUpdatePaused = false;
+        const String VU1_Registry_Key = "VU1-Demo-App";
+        const String VU1_Registry_Path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
 
 
         public MainWindow()
@@ -95,6 +98,11 @@ namespace VU1WPF
             timer.Start();
 
             Trace.WriteLine(String.Format("Dials updated every {0} seconds.", dialUpdatePeriod));
+
+            if (RegistryValueExists("HKCU", VU1_Registry_Path, VU1_Registry_Key))
+            {
+                chRunOnStartup.IsChecked = true;
+            }
         }
 
         private void btnX_Click(object sender, RoutedEventArgs e)
@@ -329,7 +337,7 @@ namespace VU1WPF
             }
 
             //Create a new instance of openFileDialog
-            OpenFileDialog res = new OpenFileDialog();
+            System.Windows.Forms.OpenFileDialog res = new System.Windows.Forms.OpenFileDialog();
 
             //Filter
             res.Filter = "Image Files|*.jpg;*.jpeg;*.png";
@@ -367,6 +375,23 @@ namespace VU1WPF
             setColorWindow.Owner = this;
             setColorWindow.SetMainWindow(this);
             setColorWindow.Show();
+        }
+
+        private void chRunOnSystemStart(object sender, RoutedEventArgs e)
+        {
+
+            RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+
+            if (chRunOnStartup.IsChecked == true)
+            {
+                rk.SetValue(VU1_Registry_Key, System.Windows.Forms.Application.ExecutablePath);
+            }
+
+            else
+            {
+                rk.DeleteValue(VU1_Registry_Key, false);
+            }
+
         }
 
         public void Selected_Dial_Change_Color(int red, int green, int blue)
@@ -519,6 +544,24 @@ namespace VU1WPF
                 DialServer.UpdateDialValue(dial.UID, 0);
                 DialServer.UpdateDialBacklight(dial.UID, 0, 0, 0);
             }
+        }
+
+        public static bool RegistryValueExists(string hive_HKLM_or_HKCU, string registryRoot, string valueName)
+        {
+            RegistryKey root;
+            switch (hive_HKLM_or_HKCU.ToUpper())
+            {
+                case "HKLM":
+                    root = Registry.LocalMachine.OpenSubKey(registryRoot, false);
+                    break;
+                case "HKCU":
+                    root = Registry.CurrentUser.OpenSubKey(registryRoot, false);
+                    break;
+                default:
+                    throw new System.InvalidOperationException("parameter registryRoot must be either \"HKLM\" or \"HKCU\"");
+            }
+
+            return root.GetValue(valueName) != null;
         }
 
 

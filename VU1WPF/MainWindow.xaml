@@ -57,6 +57,9 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+                <CheckBox x:Name="chRunOnStartup" Content="Run VU1 Demo App on system boot" HorizontalAlignment="Center" Margin="0,476,0,0" VerticalAlignment="Top" Width="229" Click="chRunOnSystemStart"/>
+
+
             </Grid>
         </Canvas>
 
