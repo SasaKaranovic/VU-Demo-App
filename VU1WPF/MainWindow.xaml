@@ -16,7 +16,7 @@
         <!-- Title bar canvas -->
         <Canvas x:Name="cnvsTitleCanvas" Margin="0,0,0,379">
             <Grid Width="{Binding ActualWidth, ElementName=cnvsTitleCanvas}" Height="30" HorizontalAlignment="Center" VerticalAlignment="Top">
-                <Label x:Name="lblTitle" Content="VU Dials - Demo App" FontWeight="Bold" FontFamily="Source Code Pro" Canvas.Left="295" VerticalAlignment="Center" HorizontalAlignment="Center" Height="24"/>
+                <Label x:Name="lblTitle" Content="VU Dials - Demo App - v" FontWeight="Bold" FontFamily="Source Code Pro" Canvas.Left="295" VerticalAlignment="Center" HorizontalAlignment="Center" Height="24"/>
                 <Button x:Name="btnX" Content="X" HorizontalAlignment="Left" VerticalAlignment="Center" Width="38" Height="22" FontSize="10" BorderThickness="0,0,0,0" Click="btnX_Click" Canvas.Left="760" Canvas.Top="1" Margin="752,1,0,0" materialDesign:ButtonAssist.CornerRadius="2" ToolTip="Close">
                     <Button.Background>
                         <SolidColorBrush Color="{DynamicResource Primary500}"/>

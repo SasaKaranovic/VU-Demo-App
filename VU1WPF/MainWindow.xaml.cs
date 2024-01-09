@@ -74,6 +74,8 @@ namespace VU1WPF
             cbDialMetric.ItemsSource = computerSensors;
             cbDialMetricCategory.ItemsSource = SensorManager.UsedSensors;
 
+            // Add build stamp to title
+            lblTitle.Content = lblTitle.Content + Properties.Resources.BuildDate.ToString();
 
             // Add drag
             //cnvsTitleCanvas.MouseDown += delegate { DragMove(); };
