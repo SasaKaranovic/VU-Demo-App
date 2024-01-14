@@ -132,3 +132,6 @@ $RECYCLE.BIN/
 .DS_Store
 
 _NCrunch*
+
+# Ignore BuildDate resource that is generated during run time
+VU1WPF/Resources/BuildDate.txt
