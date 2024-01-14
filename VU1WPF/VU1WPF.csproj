@@ -56,7 +56,7 @@
   </ItemGroup>
 
   <Target Name="PreBuild" BeforeTargets="PreBuildEvent">
-    <Exec Command="PowerShell -Command &quot;(Get-Date).ToString('yyMMdd')&quot; &gt; &quot;$(ProjectDir)\Resources\BuildDate.txt&quot;" />
+    <Exec Command="PowerShell -Command &quot;(Get-Date).ToString('yyyyMMdd')&quot; &gt; &quot;$(ProjectDir)\Resources\BuildDate.txt&quot;" />
   </Target>
 
 </Project>
