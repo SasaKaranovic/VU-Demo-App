@@ -156,10 +156,11 @@ namespace VU1WPF
             new BacklightPresetColor { Name = "Red",  Red = 100, Green = 0, Blue = 0 },
             new BacklightPresetColor { Name = "Green",  Red = 0, Green = 100, Blue = 0 },
             new BacklightPresetColor { Name = "Blue",  Red = 0, Green = 0, Blue = 100 },
-            new BacklightPresetColor { Name = "Teal",  Red = 0, Green = 100, Blue = 100 },
-            new BacklightPresetColor { Name = "Orange",  Red = 100, Green = 10, Blue = 0 },
-            new BacklightPresetColor { Name = "Purple",  Red = 100, Green = 10, Blue = 100 },
-            new BacklightPresetColor { Name = "White(ish)",  Red = 100, Green = 30, Blue = 45 }
+            new BacklightPresetColor { Name = "Cyan",  Red = 0, Green = 61, Blue = 100 },
+            new BacklightPresetColor { Name = "Magenta",  Red = 54, Green = 0, Blue = 100 },
+            new BacklightPresetColor { Name = "Yellow",  Red = 39, Green = 34, Blue = 2 },
+            new BacklightPresetColor { Name = "Orange",  Red = 100, Green = 49, Blue = 0 },
+            new BacklightPresetColor { Name = "White",  Red = 100, Green = 100, Blue = 100 }
         };
 
         public static List<BacklightPresetColor> AvailablePresets => gBacklightPresets;
