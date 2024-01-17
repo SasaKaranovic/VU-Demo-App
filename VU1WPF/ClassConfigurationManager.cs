@@ -41,9 +41,10 @@ namespace KR_VU1_ConfigurationManager
 
     class ConfigContentsRoot
     {
-        public List<ConfigContentsDial> dial_metrics { get; set; }
-        public float dialUpdatePeriod { get; set; } = 0.5F;
         public String masterKey { get; set; } = "cTpAWYuRpA2zx75Yh961Cg";
+        public float dialUpdatePeriod { get; set; } = 0.5F;
+
+        public List<ConfigContentsDial> dial_metrics { get; set; }
 
         public ConfigContentsRoot()
         {
@@ -244,6 +245,7 @@ namespace KR_VU1_ConfigurationManager
 
                 var deserializer = new DeserializerBuilder()
                     .WithNamingConvention(UnderscoredNamingConvention.Instance)
+                    .IgnoreUnmatchedProperties()
                     .Build();
                 Trace.WriteLine(fileContents);
                 var p = deserializer.Deserialize<ConfigContentsRoot>(fileContents);
@@ -274,19 +276,29 @@ namespace KR_VU1_ConfigurationManager
 
         public void SaveConfigFile()
         {
+            string path = pathConfigFile + pathFileName;
+/*
             var serializer = new SerializerBuilder()
                 .WithNamingConvention(UnderscoredNamingConvention.Instance)
                 .Build();
             var yaml = serializer.Serialize(localConfig);
+*/
+            // Trace.WriteLine(yaml);
 
-            Trace.WriteLine(yaml);
-
-            string path = pathConfigFile + pathFileName;
-            using (var fs = new FileStream(path, FileMode.OpenOrCreate))
-            using (var sw = new StreamWriter(fs))
-            {
-                sw.WriteLine(yaml);
+            using (StreamWriter streamWriter = new StreamWriter(path))
+{
+                Serializer serializer = (Serializer)new SerializerBuilder().WithNamingConvention(UnderscoredNamingConvention.Instance).Build();
+                serializer.Serialize(streamWriter, localConfig);
             }
+
+
+            /*
+                        using (var fs = new FileStream(path, FileMode.OpenOrCreate))
+                        using (var sw = new StreamWriter(fs))
+                        {
+                            sw.WriteLine(yaml);
+                        }*/
+
         }
     }
 }
