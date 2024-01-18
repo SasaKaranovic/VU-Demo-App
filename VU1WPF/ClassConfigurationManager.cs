@@ -112,6 +112,10 @@ namespace KR_VU1_ConfigurationManager
                 {
                     dial.sensor_identifier = sensor.Sensor.Identifier.ToString();
                 }
+                else
+                {
+                    dial.sensor_identifier = "";
+                }
                  
             }
             else
@@ -268,6 +272,8 @@ namespace KR_VU1_ConfigurationManager
             catch (Exception e)
             {
                 Trace.WriteLine(e, "YAML read process failed.");
+                MessageBox.Show(e.ToString(), "YAML read process failed.", MessageBoxButton.OK, MessageBoxImage.Warning);
+
                 return;
             }
 
