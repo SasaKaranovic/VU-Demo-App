@@ -1,90 +1,76 @@
-﻿using HidSharp.Reports;
-using Microsoft.VisualBasic.ApplicationServices;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
 using VU1WPF;
-using YamlDotNet.Core;
-using YamlDotNet.Core.Tokens;
-using YamlDotNet.RepresentationModel;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+using Serilog;
 using static KR_VU1_Sensors.ClassVUSensors;
+using Serilog;
+
 
 namespace KR_VU1_ConfigurationManager
 {
-    class ConfigThreshold
-    {
-        public int value { get; set; }
-        public int red { get; set; }
-        public int green { get; set; }
-        public int blue { get; set; }
-    }
-
-    class ConfigContentsDial
-    {
-        public String dial_uid { get; set; }
-        public String sensor_identifier { get; set; }
-        public float scaling_min { get; set; }  // Value to be used as 0%
-        public float scaling_max { get; set; } // Value to be used as 100%
-
-        public List<ConfigThreshold> thresholds { get; set; }
-    }
-
-    class ConfigContentsRoot
-    {
-        public String masterKey { get; set; } = "cTpAWYuRpA2zx75Yh961Cg";
-        public float dialUpdatePeriod { get; set; } = 0.5F;
-
-        public List<ConfigContentsDial> dial_metrics { get; set; }
-
-        public ConfigContentsRoot()
-        {
-            dial_metrics = new List<ConfigContentsDial>();
-        }
-    }
-
     public class ClassConfigurationManager
     {
-        private String pathConfigFile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"\KaranovicResearch\VU1-DemoApp\";
-        private String pathFileName = "vu1demo_config.yaml";
+        private float default_update_period = 0.5f;
+        private string default_master_key = "cTpAWYuRpA2zx75Yh961Cg";
+        private string pathConfigFile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"\KaranovicResearch\VU1-DemoApp\";
+        private string pathFileName = "vu1demo_config.yaml";
         private ConfigContentsRoot localConfig;
 
-        public ClassConfigurationManager() 
+
+    public ClassConfigurationManager() 
         {
+            Log.Information("The global logger has been configured");
+
             localConfig = new ConfigContentsRoot();
 
-            InitializeConfigFile();
             LoadConfigFile();
 
-            Trace.WriteLine(String.Format("Dial update period: {0}", localConfig.dialUpdatePeriod));
+            Log.Information(String.Format("Dial update period: {0}", localConfig.dialUpdatePeriod));
 
             // Check update period
             if (localConfig.dialUpdatePeriod == 0 || localConfig.dialUpdatePeriod < 0.2F)
             {
+                Log.Error("Dial update period set to `{0}`. Limiting to 0.2 seconds.", localConfig.dialUpdatePeriod);
                 localConfig.dialUpdatePeriod = 0.2F;
+            }
+
+            if (localConfig.masterKey == null || localConfig.masterKey == String.Empty) 
+            {
+                localConfig.masterKey = default_master_key;
             }
 
             SaveConfigFile();   // Save default if no config file exists
         }
 
-        private void InitializeConfigFile()
+        private void Initialize_EmptyConfigFile()
         {
-            Trace.WriteLine(pathConfigFile);          
-            System.IO.Directory.CreateDirectory(pathConfigFile);
-
             string path = pathConfigFile + pathFileName;
-            using (StreamWriter sw = File.AppendText(path))
+            Log.Information("Initializing empty config file at: {0}", path);
+
+            // Set default values
+            localConfig.dialUpdatePeriod = default_update_period;
+            localConfig.masterKey = default_master_key;
+
+            Log.Information("Set update period to {0}.", localConfig.dialUpdatePeriod);
+            Log.Information("Set Master Key to {0}.", localConfig.masterKey);
+
+            // Check if file exists
+            if (!File.Exists(path))
             {
+                System.IO.Directory.CreateDirectory(pathConfigFile);
+                using (StreamWriter sw = File.AppendText(path))
+                {
+                }
             }
+
+            // Save new config file
+            SaveConfigFile();
         }
 
         public float GetDialUpdatePeriod()
@@ -242,6 +228,17 @@ namespace KR_VU1_ConfigurationManager
             {
                 string path = pathConfigFile + pathFileName;
                 string fileContents;
+
+                if (!File.Exists(path))
+                {
+                    Log.Debug("App config does not existing. Initalizing default one.");
+                    Initialize_EmptyConfigFile();
+                }
+                else
+                {
+                    Log.Debug("Config exists. Reusing.");
+                }
+
                 using (StreamReader streamReader = new StreamReader(path, Encoding.UTF8))
                 {
                     fileContents = streamReader.ReadToEnd();
@@ -251,11 +248,24 @@ namespace KR_VU1_ConfigurationManager
                     .WithNamingConvention(UnderscoredNamingConvention.Instance)
                     .IgnoreUnmatchedProperties()
                     .Build();
-                Trace.WriteLine(fileContents);
+
+                // TODO: Demote this to Verbose after verifying config loading works properly
+                Log.Debug("---- Config contents: ---");
+                Log.Debug(fileContents.ToString());
+                Log.Debug("---- END debug info ---");
+
                 var p = deserializer.Deserialize<ConfigContentsRoot>(fileContents);
 
                 if (p == null)
                 {
+                    Log.Error("Config content is null. Aborting load.");
+                    Log.Error("---- Additional debug info ---");
+                    Log.Error("Config contents:");
+                    Log.Error(fileContents.ToString());
+                    Log.Error("---- END debug info ---");
+
+                    localConfig.dialUpdatePeriod = default_update_period;
+                    localConfig.masterKey = default_master_key;
                     return;
                 }
 
@@ -264,17 +274,19 @@ namespace KR_VU1_ConfigurationManager
 
                 foreach (ConfigContentsDial dial in p.dial_metrics)
                 {
-                    Trace.WriteLine($"{dial.dial_uid} uses {dial.sensor_identifier}.");
+                    Log.Debug($"{dial.dial_uid} uses {dial.sensor_identifier}.");
                     localConfig.dial_metrics.Add(dial);
                 }
 
             }
             catch (Exception e)
             {
-                Trace.WriteLine(e, "YAML read process failed.");
                 MessageBox.Show(e.ToString(), "YAML read process failed.", MessageBoxButton.OK, MessageBoxImage.Warning);
-
-                return;
+                Log.Error("Encountered exception while loading config.");
+                Log.Error(e.ToString());
+                
+                // Let's close the app now
+                System.Windows.Forms.Application.Exit();
             }
 
         }
@@ -283,27 +295,21 @@ namespace KR_VU1_ConfigurationManager
         public void SaveConfigFile()
         {
             string path = pathConfigFile + pathFileName;
-/*
-            var serializer = new SerializerBuilder()
-                .WithNamingConvention(UnderscoredNamingConvention.Instance)
-                .Build();
-            var yaml = serializer.Serialize(localConfig);
-*/
-            // Trace.WriteLine(yaml);
 
-            using (StreamWriter streamWriter = new StreamWriter(path))
-{
-                Serializer serializer = (Serializer)new SerializerBuilder().WithNamingConvention(UnderscoredNamingConvention.Instance).Build();
-                serializer.Serialize(streamWriter, localConfig);
+            try
+            {
+                using (StreamWriter streamWriter = new StreamWriter(path))
+                {
+                    Serializer serializer = (Serializer)new SerializerBuilder().WithNamingConvention(UnderscoredNamingConvention.Instance).Build();
+                    serializer.Serialize(streamWriter, localConfig);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to save config file");
+                throw;
             }
 
-
-            /*
-                        using (var fs = new FileStream(path, FileMode.OpenOrCreate))
-                        using (var sw = new StreamWriter(fs))
-                        {
-                            sw.WriteLine(yaml);
-                        }*/
 
         }
     }

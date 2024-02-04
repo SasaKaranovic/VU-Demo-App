@@ -1,36 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
 using static VU1WPF.ClassDialGUI;
 using KR_VU1_Server;
-using LibreHardwareMonitor.Hardware;
 using MaterialDesignThemes.Wpf;
-using System.Diagnostics;
-using LibreHardwareMonitor.Hardware.Cpu;
 using System.Windows.Threading;
-using NullSoftware.ToolKit;
 using static KR_VU1_Sensors.ClassVUSensors;
 using KR_VU1_ConfigurationManager;
-using System.ComponentModel;
-using System.Windows.Forms;
-using System.Drawing;
-using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Globalization;
-using YamlDotNet.Core.Tokens;
-using System.Runtime.CompilerServices;
 using Microsoft.Win32;
+using Serilog;
 
 namespace VU1WPF
 {
@@ -54,6 +37,21 @@ namespace VU1WPF
         public MainWindow()
         {
             InitializeComponent();
+
+            AppDomain.CurrentDomain.ProcessExit += new EventHandler(OnProcessExit);
+
+            // Create logger
+            using var log = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.Console()
+                .WriteTo.File(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"\KaranovicResearch\VU1-DemoApp\log.txt",
+                    rollingInterval: RollingInterval.Day,
+                    rollOnFileSizeLimit: true,
+                    fileSizeLimitBytes: 10000,
+                    retainedFileCountLimit: 10)
+                .CreateLogger();
+            Log.Logger = log;
 
             // Create configuration manager instance
             ConfigManager = new ClassConfigurationManager();
@@ -99,7 +97,7 @@ namespace VU1WPF
             timer.Interval = TimeSpan.FromSeconds(dialUpdatePeriod);
             timer.Start();
 
-            Trace.WriteLine(String.Format("Dials updated every {0} seconds.", dialUpdatePeriod));
+            Log.Information(String.Format("Dials updated every {0} seconds.", dialUpdatePeriod));
 
             if (RegistryValueExists("HKCU", VU1_Registry_Path, VU1_Registry_Key))
             {
@@ -127,7 +125,7 @@ namespace VU1WPF
         {
             this.Show();
             WindowState = WindowState.Normal;
-            Trace.WriteLine("Systray double click event");
+            Log.Verbose("Systray double click event");
         }
 
 
@@ -166,7 +164,7 @@ namespace VU1WPF
 
         private ClassDialGUI CreateGUIDial(String UID, String FriendlyName)
         {
-            Trace.WriteLine(String.Format("Adding dial UID:{0} Name:{1}", UID, FriendlyName));
+            Log.Debug(String.Format("Adding dial UID:{0} Name:{1}", UID, FriendlyName));
             ClassDialGUI tmpDial = new ClassDialGUI() { FriendlyName = FriendlyName, UID = UID };
 
             // Try to read sensor identifier from config
@@ -193,11 +191,11 @@ namespace VU1WPF
 
         private void RefreshDialList()
         {
-            Trace.WriteLine("Refreshing dial list");
+            Log.Information("Refreshing dial list");
             DialServer.RefreshDialList();
             List<DialInfo> restDials = DialServer.GetDialList();
 
-            Trace.WriteLine("Updatig local dials");
+            Log.Information("Updatig local dials");
             gDials.Clear();
             foreach (DialInfo dial in restDials)
             {
@@ -205,7 +203,7 @@ namespace VU1WPF
                 gDials.Add(tmpDial);
             }
 
-            Trace.WriteLine("Updating GUI dials");
+            Log.Information("Updating GUI dials");
             lbDials.ItemsSource = gDials;
             lbDials.Items.SortDescriptions.Clear();
             lbDials.Items.SortDescriptions.Add(new System.ComponentModel.SortDescription("FriendlyName", System.ComponentModel.ListSortDirection.Ascending));
@@ -477,7 +475,7 @@ namespace VU1WPF
                     float mult = (dial.ScaleMax - dial.ScaleMin) / 100;
                     if (mult <= 0)
                     {
-                        Trace.WriteLine(String.Format("Scale multiplier calculated as {0}. Clipping to 0.001", mult));
+                        Log.Verbose(String.Format("Scale multiplier calculated as {0}. Clipping to 0.001", mult));
                         mult = 0.001f;
                     }
 
@@ -486,7 +484,7 @@ namespace VU1WPF
                     // Clip dial value
                     if (dialValue <0 )
                     {
-                        Trace.WriteLine(String.Format("Sensor value {0}. Clipping to 0.", dial));
+                        Log.Verbose(String.Format("Sensor value {0}. Clipping to 0.", dial));
                         dialValue = 0;
                     }
 
@@ -518,7 +516,7 @@ namespace VU1WPF
                     }
                 }
 
-                Trace.WriteLine(String.Format("Dial:{0} set to {1}% [Sensor: {2}] - Raw value: {1}", dial.UID, dialValue, dial.Sensor.Identifier, fSensorValue));
+                Log.Verbose(String.Format("Dial:{0} set to {1}% [Sensor: {2}] - Raw value: {1}", dial.UID, dialValue, dial.Sensor.Identifier, fSensorValue));
                 DialServer.UpdateDialValue(dial.UID, dialValue);
 
                 if(bBacklightUpdate)
@@ -580,6 +578,12 @@ namespace VU1WPF
                     RefreshDialMetric(dial);
                 }
             }
+        }
+
+
+        static void OnProcessExit(object sender, EventArgs e)
+        {
+            Log.CloseAndFlush();
         }
 
     }
