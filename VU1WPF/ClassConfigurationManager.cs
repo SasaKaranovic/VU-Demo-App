@@ -31,17 +31,18 @@ namespace KR_VU1_ConfigurationManager
 
             LoadConfigFile();
 
-            Log.Information(String.Format("Dial update period: {0}", localConfig.dialUpdatePeriod));
+            Log.Information(String.Format("Dial update period: {0} seconds", localConfig.dialUpdatePeriod));
 
             // Check update period
             if (localConfig.dialUpdatePeriod == 0 || localConfig.dialUpdatePeriod < 0.2F)
             {
-                Log.Error("Dial update period set to `{0}`. Limiting to 0.2 seconds.", localConfig.dialUpdatePeriod);
+                Log.Error("Config reqests invalid dial update period of `{0}`. Limiting to 0.2 seconds.", localConfig.dialUpdatePeriod);
                 localConfig.dialUpdatePeriod = 0.2F;
             }
 
             if (localConfig.masterKey == null || localConfig.masterKey == String.Empty) 
             {
+                Log.Error("Invalid master key `{0}` found in config. Resetting to default key.", localConfig.masterKey);
                 localConfig.masterKey = default_master_key;
             }
 
@@ -295,6 +296,7 @@ namespace KR_VU1_ConfigurationManager
         public void SaveConfigFile()
         {
             string path = pathConfigFile + pathFileName;
+            Log.Debug("Saving config file.");
 
             try
             {

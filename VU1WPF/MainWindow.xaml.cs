@@ -46,9 +46,8 @@ namespace VU1WPF
                 .WriteTo.Console()
                 .WriteTo.File(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"\KaranovicResearch\VU1-DemoApp\log.txt",
-                    rollingInterval: RollingInterval.Day,
                     rollOnFileSizeLimit: true,
-                    fileSizeLimitBytes: 10000,
+                    fileSizeLimitBytes: 1048576,
                     retainedFileCountLimit: 10)
                 .CreateLogger();
             Log.Logger = log;
@@ -469,25 +468,27 @@ namespace VU1WPF
                 {
                     dialValue = 100;
                 }
+                // Avoid division by zero
+                else if (dial.ScaleMax == 0)
+                {
+                    dialValue = 100;
+                }
                 // Value is in between scale min and max. Convert to appropriate percent value
                 else
                 {
-                    float mult = (dial.ScaleMax - dial.ScaleMin) / 100;
-                    if (mult <= 0)
+                    float scaledValue = ((fSensorValue - dial.ScaleMin) / (dial.ScaleMax - dial.ScaleMin)) * 100;
+                    if (scaledValue < 0)
                     {
-                        Log.Verbose(String.Format("Scale multiplier calculated as {0}. Clipping to 0.001", mult));
-                        mult = 0.001f;
+                        Log.Verbose("Clipping scaled value to 0");
+                        scaledValue = 0;
+                    }
+                    else if (scaledValue > 100)
+                    {
+                        Log.Verbose("Clipping scaled value to 100");
+                        scaledValue = 100;
                     }
 
-                    dialValue = ((int)((int)Math.Round(fSensorValue - dial.ScaleMin) / mult));
-
-                    // Clip dial value
-                    if (dialValue <0 )
-                    {
-                        Log.Verbose(String.Format("Sensor value {0}. Clipping to 0.", dial));
-                        dialValue = 0;
-                    }
-
+                    dialValue = (int)Math.Round(scaledValue);
                 }
 
                 // Update backlight based on defined thresholds
