@@ -1,20 +1,11 @@
 ﻿using KR_VU1_ConfigurationManager;
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
+using Serilog;
 
 namespace VU1WPF
 {
@@ -27,7 +18,6 @@ namespace VU1WPF
         {
             this.mainWindow = mw;
             cbThresholds.ItemsSource = mainWindow.gCurrentlySelectedDial.Thresholds;
-            Trace.WriteLine(mainWindow.gCurrentlySelectedDial.Thresholds);
         }
 
         public void SetConfigManager(ClassConfigurationManager cm)
@@ -95,7 +85,7 @@ namespace VU1WPF
             }
             else
             {
-                Trace.WriteLine("Window owner is not set!");
+                Log.Error("Window owner is not set!");
             }
             
         }
@@ -114,7 +104,7 @@ namespace VU1WPF
             }
             else
             {
-                Trace.WriteLine("Window owner is not set!");
+                Log.Error("Window owner is not set!");
             }
 
         }
