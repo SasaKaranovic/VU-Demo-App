@@ -1,0 +1,121 @@
+﻿<Window x:Class="VU1WPF.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Style="{StaticResource DarkWindow}"
+        Background="{StaticResource PanelBrush}"
+        Title="Settings" Width="460" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+    <Window.Resources>
+        <!-- Round colour swatch; Tag = True when selected -->
+        <Style x:Key="SwatchButton" TargetType="Button">
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <Ellipse x:Name="Ring" Stroke="Transparent" StrokeThickness="2"/>
+                            <Ellipse Margin="4" Fill="{TemplateBinding Background}" Stroke="#40FFFFFF" StrokeThickness="1"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource MutedBrush}"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource AccentBrush}"/>
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="22,18,22,20">
+        <TextBlock Text="VU1 server URL" Style="{StaticResource FieldLabel}"/>
+        <TextBox x:Name="txtServerUrl" Tag="http://localhost:5340"
+                 ToolTip="Address of the VU1 server, e.g. http://localhost:5340"/>
+
+        <TextBlock Text="API key" Style="{StaticResource FieldLabel}" Margin="0,16,0,5"/>
+        <Grid>
+            <PasswordBox x:Name="pwdApiKey" FontFamily="{DynamicResource MonoFont}" Padding="8,0,40,0"/>
+            <TextBox x:Name="txtApiKey" FontFamily="{DynamicResource MonoFont}" Padding="8,0,40,0" Visibility="Collapsed"/>
+            <Button x:Name="btnReveal" Style="{StaticResource IconButton}" Tag="{StaticResource IconEye}"
+                    Width="28" Height="28" Padding="6" HorizontalAlignment="Right" Margin="0,0,3,0"
+                    ToolTip="Show / hide key" Click="btnReveal_Click"/>
+        </Grid>
+        <TextBlock Text="Use the master key or a key created in the VU1 server." Foreground="{StaticResource MutedBrush}"
+                   FontSize="11.5" Margin="0,6,0,0" TextWrapping="Wrap"/>
+
+        <TextBlock Text="Update period (seconds)" Style="{StaticResource FieldLabel}" Margin="0,16,0,5"/>
+        <TextBox x:Name="txtPeriod" Width="120" HorizontalAlignment="Left"
+                 ToolTip="How often sensor values are sent to the dials (minimum 0.2 s)"/>
+
+        <TextBlock Text="Dial finish" Style="{StaticResource FieldLabel}" Margin="0,16,0,5"/>
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Set all dials to" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" Margin="0,0,10,0"/>
+            <Button Content="Silver" Style="{StaticResource GhostButton}" Margin="0,0,6,0" Click="btnAllSilver_Click"
+                    ToolTip="Show every dial with the silver finish (you can still change single dials on their card)"/>
+            <Button Content="Black" Style="{StaticResource GhostButton}" Click="btnAllBlack_Click"
+                    ToolTip="Show every dial with the black finish (you can still change single dials on their card)"/>
+        </StackPanel>
+
+        <TextBlock Text="Identify (double-click a dial)" Style="{StaticResource FieldLabel}" FontWeight="Medium" Margin="0,18,0,6"/>
+        <ItemsControl x:Name="identifyColors">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Button Style="{StaticResource SwatchButton}" Background="{Binding Brush}" Tag="{Binding IsSelected}"
+                            ToolTip="{Binding Name}" Click="IdentifyColor_Click"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Grid x:Name="identifyCustom" Visibility="Collapsed" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="46"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="32"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="26"/>
+                <RowDefinition Height="26"/>
+                <RowDefinition Height="26"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="Red" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+            <Slider Grid.Row="0" Grid.Column="1" x:Name="sliderIdRed" Maximum="100" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="IdentifySlider_ValueChanged"/>
+            <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Value, ElementName=sliderIdRed, StringFormat={}{0:0}}" TextAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Row="1" Text="Green" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+            <Slider Grid.Row="1" Grid.Column="1" x:Name="sliderIdGreen" Maximum="100" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="IdentifySlider_ValueChanged"/>
+            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Value, ElementName=sliderIdGreen, StringFormat={}{0:0}}" TextAlignment="Right" VerticalAlignment="Center"/>
+            <TextBlock Grid.Row="2" Text="Blue" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center"/>
+            <Slider Grid.Row="2" Grid.Column="1" x:Name="sliderIdBlue" Maximum="100" IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="IdentifySlider_ValueChanged"/>
+            <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding Value, ElementName=sliderIdBlue, StringFormat={}{0:0}}" TextAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
+        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock Text="Duration" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <TextBox x:Name="txtIdentifyMs" Width="80" FontFamily="{DynamicResource MonoFont}"
+                     ToolTip="How long the identify colour is shown (200 - 10000 ms)"/>
+            <TextBlock Text="ms" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="8,0,0,0"/>
+        </StackPanel>
+
+        <CheckBox x:Name="chkRunOnStartup" Content="Start VU1 Demo App when I sign in" Margin="0,18,0,0"/>
+
+        <StackPanel x:Name="panelTestResult" Orientation="Horizontal" Margin="0,16,0,0" Visibility="Collapsed">
+            <Ellipse x:Name="dotTest" Width="9" Height="9" Margin="0,0,8,0" VerticalAlignment="Center"/>
+            <TextBlock x:Name="txtTestResult" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="380"/>
+        </StackPanel>
+
+        <DockPanel Margin="0,22,0,0" LastChildFill="False">
+            <Button x:Name="btnTest" DockPanel.Dock="Left" Content="Test connection" Style="{StaticResource GhostButton}" Click="btnTest_Click"/>
+            <Button DockPanel.Dock="Right" Content="Save" Style="{StaticResource PrimaryButton}" IsDefault="True" Click="btnSave_Click" Margin="8,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="Cancel" Style="{StaticResource GhostButton}" IsCancel="True"/>
+        </DockPanel>
+    </StackPanel>
+</Window>

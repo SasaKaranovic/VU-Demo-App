@@ -1,34 +1,35 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Diagnostics;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
+using Serilog;
 
 namespace VU1WPF
 {
-    /// <summary>
-    /// Interaction logic for AboutWindow.xaml
-    /// </summary>
     public partial class AboutWindow : Window
     {
         public AboutWindow()
         {
             InitializeComponent();
+            DarkTitleBar.Apply(this);
 
-            txtBuildStamp.Text = "Build date: "+ Properties.Resources.BuildDate.ToString();
+            txtBuildStamp.Text = $"Build {Properties.Resources.BuildDate.Trim()}  ·  .NET {Environment.Version}";
+        }
+
+        private void btnWebsite_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("https://vudials.com") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not open website");
+            }
         }
 
         private void btnCloseWindow(object sender, RoutedEventArgs e)
         {
-            this.Close();
+            Close();
         }
     }
 }

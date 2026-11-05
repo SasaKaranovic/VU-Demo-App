@@ -1,0 +1,251 @@
+﻿<Window x:Class="VU1WPF.DialImageEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Style="{StaticResource DarkWindow}"
+        Title="Dial Image Editor" Height="840" Width="1240" MinHeight="600" MinWidth="1200"
+        WindowStartupLocation="CenterOwner"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        Closing="Window_Closing">
+
+    <Grid Margin="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="240"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="300"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ============================================================ LEFT: sources -->
+        <Grid Grid.Column="0" Margin="0,0,10,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="3*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="2*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Templates" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4"/>
+            <ListBox Grid.Row="1" x:Name="lbTemplates" SelectionChanged="lbTemplates_SelectionChanged"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ToolTip="Click a template to use it as the background">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <Border BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" Background="White">
+                                <Image Source="{Binding Thumbnail}" Width="100" Height="72" Stretch="Uniform"/>
+                            </Border>
+                            <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" MaxWidth="100"/>
+                                <TextBlock Text="{Binding Source}" FontSize="10" Opacity="0.6"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <StackPanel Grid.Row="2" Margin="0,6,0,0">
+                <Button x:Name="btnOpenImage" Content="Upload image from computer…" Click="btnOpenImage_Click" Margin="0,0,0,4"
+                        ToolTip="Use any picture (PNG/JPG/BMP/GIF). It is resized, converted to grayscale and then to 1-bit."/>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Blank" Click="btnBlank_Click" Width="70" Margin="0,0,4,0" Style="{StaticResource GhostButton}" ToolTip="Start with an empty white background"/>
+                    <Button Content="Templates folder" Click="btnOpenTemplatesFolder_Click" Width="146" Style="{StaticResource GhostButton}"
+                            ToolTip="Open the folder where you can add your own template images (200x144 px recommended)"/>
+                </StackPanel>
+            </StackPanel>
+
+            <TextBlock Grid.Row="3" Text="Saved designs" FontWeight="SemiBold" FontSize="14" Margin="0,14,0,4"/>
+            <ListBox Grid.Row="4" x:Name="lbDesigns" MouseDoubleClick="lbDesigns_MouseDoubleClick"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ToolTip="Double-click to open a saved design">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <Border BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" Background="White">
+                                <Image Source="{Binding Thumbnail}" Width="70" Height="50" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                            </Border>
+                            <StackPanel Margin="8,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Name}" TextWrapping="Wrap" MaxWidth="120"/>
+                                <TextBlock Text="{Binding ModifiedText}" FontSize="10" Opacity="0.6"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,6,0,0">
+                <Button Content="Open" Click="btnLoadDesign_Click" Width="80" Margin="0,0,4,0" Style="{StaticResource GhostButton}"/>
+                <Button Content="Delete" Click="btnDeleteDesign_Click" Width="80" Style="{StaticResource GhostButton}"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- ============================================================ CENTER: canvas -->
+        <Grid Grid.Column="1" Margin="0,0,10,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" x:Name="txtHeader" Text="Dial" FontWeight="Bold" FontSize="16" Margin="0,0,0,6"/>
+
+            <!-- Tool bar -->
+            <WrapPanel Grid.Row="1" Margin="0,0,0,8" VerticalAlignment="Center">
+                <TextBlock Text="Tool:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <RadioButton x:Name="rbToolText" Content="Text" GroupName="Tool" IsChecked="True" Margin="0,0,10,0" Checked="Tool_Changed"
+                             ToolTip="Select and drag text. Double-click empty space to add text."/>
+                <RadioButton x:Name="rbToolDraw" Content="Draw" GroupName="Tool" Margin="0,0,10,0" Checked="Tool_Changed"
+                             ToolTip="Freehand drawing"/>
+                <RadioButton x:Name="rbToolErase" Content="Erase strokes" GroupName="Tool" Margin="0,0,16,0" Checked="Tool_Changed"
+                             ToolTip="Erase parts of your freehand drawing (to hide parts of the template, draw with white instead)"/>
+
+                <TextBlock Text="Ink:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <RadioButton x:Name="rbInkBlack" Content="Black" GroupName="Ink" IsChecked="True" Margin="0,0,6,0" Checked="Brush_Changed"/>
+                <RadioButton x:Name="rbInkWhite" Content="White" GroupName="Ink" Margin="0,0,16,0" Checked="Brush_Changed"
+                             ToolTip="Draw white, e.g. to cover parts of a template"/>
+
+                <TextBlock Text="Size:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <Slider x:Name="sliderBrush" Minimum="1" Maximum="12" Value="2" Width="90" IsSnapToTickEnabled="True" TickFrequency="1"
+                        VerticalAlignment="Center" ValueChanged="Brush_Changed" AutoToolTipPlacement="TopLeft"/>
+                <TextBlock Text="{Binding Value, ElementName=sliderBrush, StringFormat={}{0:0}px}" VerticalAlignment="Center" Margin="4,0,16,0" Width="30"/>
+
+                <Button Content="Undo" Click="btnUndo_Click" Margin="0,0,4,0" Style="{StaticResource FlatButton}" ToolTip="Undo last drawing change (Ctrl+Z)"/>
+                <Button Content="Clear drawing" Click="btnClearDrawing_Click" Style="{StaticResource FlatButton}"/>
+            </WrapPanel>
+
+            <!-- Design surface: 200x144 dial pixels shown at 3x -->
+            <Border Grid.Row="2" Background="{StaticResource InputBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="10">
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center" BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1"
+                        SnapsToDevicePixels="True">
+                    <Border.LayoutTransform>
+                        <ScaleTransform ScaleX="3" ScaleY="3"/>
+                    </Border.LayoutTransform>
+                    <Grid x:Name="designSurface" Width="200" Height="144" ClipToBounds="True" Background="White"
+                          TextOptions.TextFormattingMode="Ideal">
+                        <Image x:Name="imgBase" Width="200" Height="144" Stretch="Fill"
+                               RenderOptions.BitmapScalingMode="NearestNeighbor" IsHitTestVisible="False"/>
+                        <InkCanvas x:Name="inkCanvas" Background="Transparent" Width="200" Height="144"/>
+                        <Canvas x:Name="textLayer" Background="Transparent" Width="200" Height="144"
+                                MouseLeftButtonDown="textLayer_MouseLeftButtonDown"/>
+                    </Grid>
+                </Border>
+            </Border>
+
+            <!-- Preview (exactly what is sent) + hints -->
+            <DockPanel Grid.Row="3" Margin="0,10,0,0">
+                <StackPanel DockPanel.Dock="Left" Margin="0,0,16,0">
+                    <TextBlock Text="Dial preview" Style="{StaticResource FieldLabel}"/>
+                    <Border BorderBrush="{StaticResource LineStrongBrush}" BorderThickness="1" Background="White" CornerRadius="4">
+                        <Image x:Name="imgPreview" Width="200" Height="144" Stretch="Fill" RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                    </Border>
+                    <TextBlock Text="Exactly what is sent (1-bit, 200 × 144)" FontSize="11" Foreground="{StaticResource FaintBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="txtHint" Opacity="0.7" TextWrapping="Wrap" VerticalAlignment="Center"
+                           Text="Text tool: double-click to add text, drag to move, arrow keys to nudge (Shift = 5px), Delete to remove."/>
+            </DockPanel>
+        </Grid>
+
+        <!-- ============================================================ RIGHT: properties -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <!-- Image processing -->
+                    <TextBlock Text="Image conversion" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4"/>
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="80"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="34"/>
+                            <RowDefinition Height="34"/>
+                            <RowDefinition Height="34"/>
+                            <RowDefinition Height="30"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Fit" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="cbFit" SelectionChanged="Processing_Changed"
+                                  ToolTip="How the image is placed on the 200x144 display"/>
+                        <TextBlock Grid.Row="1" Text="1-bit mode" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="1" Grid.Column="1" x:Name="cbMode" SelectionChanged="Processing_Changed"
+                                  ToolTip="Threshold: best for text/line art. Dithering: best for photos."/>
+                        <TextBlock Grid.Row="2" Text="Threshold" VerticalAlignment="Center"/>
+                        <DockPanel Grid.Row="2" Grid.Column="1">
+                            <TextBlock DockPanel.Dock="Right" Width="30" TextAlignment="Right" VerticalAlignment="Center"
+                                       Text="{Binding Value, ElementName=sliderThreshold, StringFormat={}{0:0}}"/>
+                            <Slider x:Name="sliderThreshold" Minimum="1" Maximum="255" Value="128" VerticalAlignment="Center"
+                                    IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="Processing_Changed"
+                                    ToolTip="Brightness cut-off. Lower = more white, higher = more black."/>
+                        </DockPanel>
+                        <CheckBox Grid.Row="3" Grid.Column="1" x:Name="chkInvert" Content="Invert" Checked="Processing_Changed" Unchecked="Processing_Changed"/>
+                    </Grid>
+
+                    <Separator Margin="0,12"/>
+
+                    <!-- Text -->
+                    <DockPanel Margin="0,0,0,4">
+                        <Button DockPanel.Dock="Right" Content="+ Add text" Click="btnAddText_Click" Style="{StaticResource FlatButton}"/>
+                        <TextBlock Text="Text" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                    </DockPanel>
+
+                    <StackPanel x:Name="panelText" IsEnabled="False">
+                        <TextBox x:Name="txtText" AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="50" MaxHeight="100"
+                                 VerticalScrollBarVisibility="Auto" TextChanged="txtText_TextChanged"
+                                 Tag="Text (Enter for new line)" VerticalContentAlignment="Top" Padding="8,6"/>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="34"/>
+                                <RowDefinition Height="34"/>
+                                <RowDefinition Height="30"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Font" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="cbFont" SelectionChanged="TextStyle_Changed" IsEditable="False"/>
+                            <TextBlock Grid.Row="1" Text="Size" VerticalAlignment="Center"/>
+                            <DockPanel Grid.Row="1" Grid.Column="1">
+                                <TextBlock DockPanel.Dock="Right" Width="30" TextAlignment="Right" VerticalAlignment="Center"
+                                           Text="{Binding Value, ElementName=sliderFontSize, StringFormat={}{0:0}}"/>
+                                <Slider x:Name="sliderFontSize" Minimum="6" Maximum="96" Value="20" VerticalAlignment="Center"
+                                        IsSnapToTickEnabled="True" TickFrequency="1" ValueChanged="TextStyle_Changed"/>
+                            </DockPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                <CheckBox x:Name="chkBold" Content="Bold" Margin="0,0,12,0" Checked="TextStyle_Changed" Unchecked="TextStyle_Changed"/>
+                                <CheckBox x:Name="chkWhiteText" Content="White text" Checked="TextStyle_Changed" Unchecked="TextStyle_Changed"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <WrapPanel Margin="0,6,0,0">
+                            <Button Content="Center horizontally" Click="btnCenterText_Click" Margin="0,0,4,4" Style="{StaticResource GhostButton}"/>
+                            <Button Content="Duplicate" Click="btnDuplicateText_Click" Margin="0,0,4,4" Style="{StaticResource GhostButton}"/>
+                            <Button Content="Delete" Click="btnDeleteText_Click" Margin="0,0,4,4" Style="{StaticResource GhostButton}"/>
+                        </WrapPanel>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Save / send -->
+            <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                <TextBlock Text="Design name" Style="{StaticResource FieldLabel}"/>
+                <TextBox x:Name="txtDesignName" Tag="e.g. CPU load - blue" Margin="0,0,0,8"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button Content="Save design" Click="btnSaveDesign_Click" Width="120" Margin="0,0,6,0" Style="{StaticResource GhostButton}"/>
+                    <Button Content="Export PNG…" Click="btnExportPng_Click" Width="120" Style="{StaticResource GhostButton}"/>
+                </StackPanel>
+                <Button x:Name="btnSend" Content="Save &amp; send to dial" Style="{StaticResource PrimaryButton}" Click="btnSend_Click" Height="36"/>
+                <TextBlock x:Name="txtStatus" Margin="0,6,0,0" TextWrapping="Wrap" MinHeight="18"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

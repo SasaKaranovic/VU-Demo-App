@@ -24,6 +24,10 @@
 # Executable
 !define MAINEXE VU1-Demo-App.exe
 
+# .NET Desktop Runtime installer bundled with the app (place it in installer\inc\).
+# Download the latest x64 "Windows Desktop Runtime 10.0.x" from https://dotnet.microsoft.com/download/dotnet/10.0
+!define DOTNET_RUNTIME_EXE "windowsdesktop-runtime-10.0-win-x64.exe"
+
 ;--------------------------------
 ;Include Modern UI
 
@@ -81,7 +85,7 @@ Section "VU1 Demo Application" VUDEMO
   File "${DIRSOURCE}\installer\inc\VU1_Icon.ico"
 
   ; .NET Desktop Runtime
-  File "inc\windowsdesktop-runtime-6.0.25-win-x64.exe"
+  File "inc\${DOTNET_RUNTIME_EXE}"
 
 
   # Start Menu
@@ -114,7 +118,7 @@ Section "VU1 Demo Application" VUDEMO
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${COMPANYNAME} ${APPNAME}" "EstimatedSize" ${INSTALLSIZE}
 
   ;Run .NET Desktop redist
-  ExecWait "$INSTDIR\windowsdesktop-runtime-6.0.25-win-x64.exe /q"
+  ExecWait '"$INSTDIR\${DOTNET_RUNTIME_EXE}" /install /quiet /norestart'
 
   ;Create uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -145,5 +149,7 @@ Section "Uninstall"
 
   ; Remove windows start
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "${APPNAME}"
+  ; Run-on-startup entry created by the app itself
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "VU1-Demo-App"
 
 SectionEnd
