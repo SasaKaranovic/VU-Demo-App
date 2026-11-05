@@ -1,591 +1,821 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using static VU1WPF.ClassDialGUI;
-using KR_VU1_Server;
-using MaterialDesignThemes.Wpf;
-using System.Windows.Threading;
-using static KR_VU1_Sensors.ClassVUSensors;
-using KR_VU1_ConfigurationManager;
-using System.Text.RegularExpressions;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
-using Microsoft.Win32;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Data;
+using System.Windows.Media;
+using KR_VU1_ConfigurationManager;
+using KR_VU1_Server;
 using Serilog;
+using static KR_VU1_Sensors.ClassVUSensors;
 
 namespace VU1WPF
 {
     /// <summary>
-    /// Interaction logic for MainWindow.xaml
+    /// Main window: a grid of dial cards (4 per row), a status bar and the background
+    /// loop that pushes sensor values to the VU1 server.
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, IDialHost
     {
-        public object FormWindowState { get; private set; }
-        List<VU1_Sensor> computerSensors = new List<VU1_Sensor>();
-        public ClassConfigurationManager ConfigManager;
-        VU1_SensorManager SensorManager;
-        VU1_Server DialServer;
-        public List<ClassDialGUI> gDials = new List<ClassDialGUI>();
-        public ClassDialGUI gCurrentlySelectedDial = new ClassDialGUI { FriendlyName = "", UID = "" };
-        bool gDialUpdatePaused = false;
-        const String VU1_Registry_Key = "VU1-Demo-App";
-        const String VU1_Registry_Path = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+        // How often a value/backlight is re-sent even if unchanged (recovers from server/dial restarts).
+        private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromSeconds(15);
+        // How often to re-check the dial list while connected (picks up newly attached dials).
+        private static readonly TimeSpan DialListRefreshInterval = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan MaxReconnectBackoff = TimeSpan.FromSeconds(30);
+        // Failures before the status turns from yellow (connecting) to red (unreachable)
+        private const int FailuresBeforeOffline = 3;
 
+        public ClassConfigurationManager ConfigManager;
+        private readonly VU1_SensorManager SensorManager;
+        private volatile VU1_Server _server;
+
+        // UI collection (UI thread only) and an immutable snapshot for the background loop
+        private readonly ObservableCollection<DialViewModel> _dialVms = new();
+        private volatile List<ClassDialGUI> _dials = new();
+
+        // Metric drop-down entries, shared by all dial cards
+        private readonly List<SensorOption> _sensorOptions;
+        private readonly ListCollectionView _sensorOptionsView;
+
+        private readonly SharedUiState _ui = new();
+        private volatile bool _paused;
+        private readonly CancellationTokenSource _shutdownCts = new();
+        private CancellationTokenSource? _loopCts;
+        private Task? _updateLoop;
+        private System.Windows.Forms.NotifyIcon? _notifyIcon;
+        private bool _isClosing;
+        private bool _hasConnectedOnce;
 
         public MainWindow()
         {
             InitializeComponent();
 
-            AppDomain.CurrentDomain.ProcessExit += new EventHandler(OnProcessExit);
-
-            // Create logger
-            using var log = new LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .WriteTo.Console()
-                .WriteTo.File(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + @"\KaranovicResearch\VU1-DemoApp\log.txt",
-                    rollOnFileSizeLimit: true,
-                    fileSizeLimitBytes: 1048576,
-                    retainedFileCountLimit: 10)
-                .CreateLogger();
-            Log.Logger = log;
-
-            // Create configuration manager instance
             ConfigManager = new ClassConfigurationManager();
+            _server = CreateServer();
 
-
-            // Create instance of VU1 server
-            string MasterKey = ConfigManager.GetMasterKey();
-            DialServer = new VU1_Server(MasterKey);
-
-            // Initiate sensor manager
             SensorManager = new VU1_SensorManager();
-            computerSensors = SensorManager.get_used_sensors();
+            _sensorOptions = new List<SensorOption> { SensorOption.None };
+            _sensorOptions.AddRange(SensorManager.get_used_sensors()
+                .Select(s => new SensorOption(s.Sensor))
+                .OrderBy(o => o.Category, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(o => o.Hardware, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(o => o.Name, StringComparer.OrdinalIgnoreCase));
+            _sensorOptionsView = new ListCollectionView(_sensorOptions);
+            _sensorOptionsView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(SensorOption.Category)));
 
-            // Bind UI and back-end items
-            lbDials.ItemsSource = gDials;
+            _ui.MetricsExpanded = ConfigManager.GetMetricsExpanded();
+            DialsHost.ItemsSource = _dialVms;
+            txtVersion.Text = Properties.Resources.BuildDate.Trim();
 
-            // Bind UI sensor ComboBox to sensor list
-            cbDialMetric.ItemsSource = computerSensors;
-            cbDialMetricCategory.ItemsSource = SensorManager.UsedSensors;
+            CreateTrayIcon();
+            UpdateStatus();
 
-            // Add build stamp to title
-            lblTitle.Content = lblTitle.Content + Properties.Resources.BuildDate.ToString();
+            Loaded += MainWindow_Loaded;
+            SizeChanged += (s, e) => KeepOnScreen();
+        }
 
-            // Add drag
-            //cnvsTitleCanvas.MouseDown += delegate { DragMove(); };
-            lblTitle.MouseDown += delegate { DragMove(); };
+        private VU1_Server CreateServer()
+        {
+            var server = new VU1_Server(ConfigManager.GetServerUrl(), ConfigManager.GetMasterKey());
+            server.ConnectionStateChanged += online => Dispatcher.InvokeAsync(() => OnConnectionStateChanged(server, online));
+            return server;
+        }
 
-            RefreshDialList();
-            //SetAllDialValue(50);
+        private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Rows of dials grow the window (SizeToContent) up to ~90% of the screen, then scroll.
+            DialScroller.MaxHeight = Math.Max(300, SystemParameters.WorkArea.Height * 0.9 - 40 - 38 - 2);
 
-            //Systray icon
-            System.Windows.Forms.NotifyIcon notifyIcon;
-            notifyIcon = new System.Windows.Forms.NotifyIcon();
-            notifyIcon.DoubleClick += notifyIcon_DoubleClick;
-            notifyIcon.Icon = new System.Drawing.Icon("VU1_Icon.ico");
-            notifyIcon.Visible = true;
-
-            // Create timer
-            float dialUpdatePeriod = ConfigManager.GetDialUpdatePeriod();
-            //DispatcherTimer timer = new DispatcherTimer(System.Windows.Threading.DispatcherPriority.Send);
-            DispatcherTimer timer = new DispatcherTimer(System.Windows.Threading.DispatcherPriority.Render);
-            timer.Tick += TimerTick;
-            timer.Interval = TimeSpan.FromSeconds(dialUpdatePeriod);
-            timer.Start();
-
-            Log.Information(String.Format("Dials updated every {0} seconds.", dialUpdatePeriod));
-
-            if (RegistryValueExists("HKCU", VU1_Registry_Path, VU1_Registry_Key))
+            if (ConfigManager.LoadWarning != null)
             {
-                chRunOnStartup.IsChecked = true;
+                MessageBox.Show(this, ConfigManager.LoadWarning, "VU1 Demo App", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            await RefreshDialListAsync();
+            StartUpdateLoop();
+        }
+
+        private void KeepOnScreen()
+        {
+            Rect area = SystemParameters.WorkArea;
+            if (Top + ActualHeight > area.Bottom)
+            {
+                Top = Math.Max(area.Top, area.Bottom - ActualHeight);
             }
         }
 
-        private void btnX_Click(object sender, RoutedEventArgs e)
+        // ================================================================== tray icon / window chrome
+
+        private void CreateTrayIcon()
         {
-            System.Windows.Application.Current.Shutdown();
+            try
+            {
+                var menu = new System.Windows.Forms.ContextMenuStrip();
+                menu.Items.Add("Open", null, (s, e) => Dispatcher.Invoke(RestoreFromTray));
+                menu.Items.Add("Exit", null, (s, e) => Dispatcher.Invoke(() => Application.Current.Shutdown()));
+
+                _notifyIcon = new System.Windows.Forms.NotifyIcon
+                {
+                    // Absolute path: the working directory is not the app folder when started on boot.
+                    Icon = new System.Drawing.Icon(AppPaths.IconIco),
+                    Text = "VU1 Demo App",
+                    ContextMenuStrip = menu,
+                    Visible = true
+                };
+                _notifyIcon.DoubleClick += (s, e) => Dispatcher.Invoke(RestoreFromTray);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to create system tray icon");
+            }
         }
 
-        private void btnMin_Click(object sender, RoutedEventArgs e)
+        private void RestoreFromTray()
         {
-            WindowState = WindowState.Minimized;
+            Show();
+            WindowState = WindowState.Normal;
+            Activate();
         }
+
+        private void btnX_Click(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
+
+        private void btnMin_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
         private void btnMinToTray_Click(object sender, RoutedEventArgs e)
         {
             WindowState = WindowState.Minimized;
-            this.Hide();
+            Hide();
         }
 
-        void notifyIcon_DoubleClick(object sender, EventArgs e)
+        // ================================================================== status bar
+
+        private void OnConnectionStateChanged(VU1_Server source, bool online)
         {
-            this.Show();
-            WindowState = WindowState.Normal;
-            Log.Verbose("Systray double click event");
+            if (!ReferenceEquals(source, _server)) return;   // event from a replaced server instance
+            if (online) _hasConnectedOnce = true;
+            UpdateStatus();
         }
 
-
-        private void lbDials_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void UpdateStatus()
         {
-            ClassDialGUI sel = lbDials.SelectedItem as ClassDialGUI;
-            if (sel == null) return;
+            var server = _server;
+            string url = server.ServerUrl;
+            string detail;
+            Color color;
+            string title;
 
-
-            gCurrentlySelectedDial = lbDials.SelectedItem as ClassDialGUI;
-
-            txtlSelectedDialName.Text = sel.FriendlyName.ToString();
-            lblSelectedDialUID.Content = sel.UID.ToString();
-            if (gCurrentlySelectedDial.Sensor != null)
+            if (server.IsOnline)
             {
-                lblCurrentMetric.Content = String.Format("{0} - {1} - {2}", gCurrentlySelectedDial.Sensor.Name.ToString(), gCurrentlySelectedDial.Sensor.SensorType.ToString(), gCurrentlySelectedDial.Sensor.Identifier.ToString());
-                //lblCurrentValue.Content = gCurrentlySelectedDial.Sensor.Value.ToString();
-                lblScalingMin.Content = gCurrentlySelectedDial.ScaleMin.ToString();
-                lblScalingMax.Content = gCurrentlySelectedDial.ScaleMax.ToString();
-                txtMinValue.Text = gCurrentlySelectedDial.ScaleMin.ToString();
-                txtMaxValue.Text = gCurrentlySelectedDial.ScaleMax.ToString();
-                
+                color = (Color)FindResource("OkColor");
+                title = _paused ? "Connected · paused" : "Connected";
+                int count = _dialVms.Count;
+                detail = $"{url}  ·  {count} dial{(count == 1 ? "" : "s")}  ·  updating every {ConfigManager.GetDialUpdatePeriod().ToString("0.##", CultureInfo.InvariantCulture)} s";
+            }
+            else if (server.ConsecutiveFailures < FailuresBeforeOffline)
+            {
+                color = (Color)FindResource("WarnColor");
+                title = _hasConnectedOnce ? "Reconnecting…" : "Connecting…";
+                detail = url;
             }
             else
             {
-                lblCurrentMetric.Content = "";
-                lblCurrentValue.Content = "";
-                lblCurrentPercent.Content = "";
-                lblScalingMin.Content = "";
-                lblScalingMax.Content = "";
-                txtMinValue.Text = "0";
-                txtMaxValue.Text = "100";
+                color = (Color)FindResource("DangerColor");
+                title = "Server unreachable";
+                detail = $"{url}  ·  retrying";
             }
-            
+
+            StatusDot.Fill = new SolidColorBrush(color);
+            StatusGlow.Color = color;
+            txtServerStatus.Text = title;
+            txtServerDetail.Text = detail;
+
+            UpdateEmptyState();
         }
 
-        private ClassDialGUI CreateGUIDial(String UID, String FriendlyName)
+        private void UpdateEmptyState()
         {
-            Log.Debug(String.Format("Adding dial UID:{0} Name:{1}", UID, FriendlyName));
-            ClassDialGUI tmpDial = new ClassDialGUI() { FriendlyName = FriendlyName, UID = UID };
+            bool empty = _dialVms.Count == 0;
+            EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+            DialScroller.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
 
-            // Try to read sensor identifier from config
-            string sensorIdentifier = ConfigManager.GetDialMetric(UID);
-            float sensorMin = ConfigManager.GetDialMin(UID);
-            float sensorMax = ConfigManager.GetDialMax(UID);
-            List<ClassDialThreshold> thresholds = ConfigManager.GetDialThresholds(UID);
-
-            if (sensorIdentifier != "")
+            if (empty)
             {
-                VU1_Sensor tmpSensor = SensorManager.FindSensorByIdentifier(sensorIdentifier);
-                if(tmpSensor != null)
+                if (_server.IsOnline)
                 {
-                    tmpDial.Sensor = tmpSensor.Sensor;
-                    tmpDial.SensorIdentifier = tmpSensor.Sensor.Identifier.ToString();
-                    tmpDial.SensorName = tmpSensor.Sensor.Name.ToString();
-                    tmpDial.ScaleMin = sensorMin;
-                    tmpDial.ScaleMax = sensorMax;
-                    tmpDial.Thresholds = thresholds;
+                    txtEmptyTitle.Text = "No dials found";
+                    txtEmptyDetail.Text = "The VU1 server is running but reports no dials. Check that the dials are connected to the hub.";
+                }
+                else
+                {
+                    txtEmptyTitle.Text = "Can't reach the VU1 server";
+                    txtEmptyDetail.Text = $"Make sure the VU1 server is running at {_server.ServerUrl} and the API key is correct.";
                 }
             }
-            return tmpDial;
         }
 
-        private void RefreshDialList()
+        // ================================================================== dial list
+
+        private async Task RefreshDialListAsync()
         {
             Log.Information("Refreshing dial list");
-            DialServer.RefreshDialList();
-            List<DialInfo> restDials = DialServer.GetDialList();
-
-            Log.Information("Updatig local dials");
-            gDials.Clear();
-            foreach (DialInfo dial in restDials)
+            btnRefreshDials.IsEnabled = false;
+            try
             {
-                ClassDialGUI tmpDial = CreateGUIDial(dial.uid, dial.dial_name);
-                gDials.Add(tmpDial);
+                var server = _server;
+                if (await server.RefreshDialListAsync(_shutdownCts.Token))
+                {
+                    ApplyDialList(server.GetDialList(), fetchAllImages: true);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // shutting down
+            }
+            finally
+            {
+                btnRefreshDials.IsEnabled = true;
+                UpdateStatus();
+            }
+        }
+
+        /// <summary>Synchronises the dial cards with the server's dial list. UI thread only.</summary>
+        private void ApplyDialList(List<DialInfo> serverDials, bool fetchAllImages)
+        {
+            var incoming = serverDials.Where(d => d != null && !string.IsNullOrEmpty(d.uid))
+                                      .GroupBy(d => d.uid).Select(g => g.First())
+                                      .ToList();
+            var incomingUids = new HashSet<string>(incoming.Select(d => d.uid));
+
+            // Remove dials that disappeared
+            foreach (var vm in _dialVms.Where(v => !incomingUids.Contains(v.Uid)).ToList())
+            {
+                _dialVms.Remove(vm);
             }
 
-            Log.Information("Updating GUI dials");
-            lbDials.ItemsSource = gDials;
-            lbDials.Items.SortDescriptions.Clear();
-            lbDials.Items.SortDescriptions.Add(new System.ComponentModel.SortDescription("FriendlyName", System.ComponentModel.ListSortDirection.Ascending));
-            lbDials.Items.Refresh();
+            // Add new dials / refresh names of existing ones
+            var newVms = new List<DialViewModel>();
+            foreach (var info in incoming)
+            {
+                var existing = _dialVms.FirstOrDefault(v => v.Uid == info.uid);
+                string name = string.IsNullOrWhiteSpace(info.dial_name) ? info.uid : info.dial_name;
+                if (existing != null)
+                {
+                    existing.Dial.FriendlyName = name;
+                    existing.Name = name;
+                    continue;
+                }
 
-            // Sort dial thresholds
-            sortDialThresholds();
+                var vm = CreateDialViewModel(info, name);
+                _dialVms.Add(vm);
+                newVms.Add(vm);
+            }
+
+            // Order: as arranged by the user (drag & drop), new dials after that sorted by name
+            var savedOrder = ConfigManager.GetDialOrder();
+            var sorted = _dialVms
+                .OrderBy(v => { int i = savedOrder.IndexOf(v.Uid); return i < 0 ? int.MaxValue : i; })
+                .ThenBy(v => v.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                int current = _dialVms.IndexOf(sorted[i]);
+                if (current != i) _dialVms.Move(current, i);
+            }
+
+            _dials = _dialVms.Select(v => v.Dial).ToList();
+
+            foreach (var vm in fetchAllImages ? _dialVms.ToList() : newVms)
+            {
+                _ = RefreshDialImageAsync(vm);
+            }
+
+            Log.Information("Dial list updated: {Count} dial(s)", _dialVms.Count);
+            UpdateStatus();
         }
 
-        public void PauseDialUpdate()
+        private DialViewModel CreateDialViewModel(DialInfo info, string name)
         {
-            gDialUpdatePaused = true;
-            btnToggleDialUpdate.Content = new PackIcon { Kind = PackIconKind.Play };
+            var dial = new ClassDialGUI
+            {
+                FriendlyName = name,
+                UID = info.uid,
+                Finish = ConfigManager.GetDialFinish(info.uid),
+                RulesEnabled = ConfigManager.GetDialRulesEnabled(info.uid),
+                FixedColor = ConfigManager.GetDialFixedColor(info.uid),
+            };
+            dial.ScaleMin = ConfigManager.GetDialMin(info.uid);
+            dial.ScaleMax = ConfigManager.GetDialMax(info.uid);
+            dial.Thresholds = ConfigManager.GetDialThresholds(info.uid);
+
+            string sensorId = ConfigManager.GetDialMetric(info.uid);
+            dial.SensorIdentifier = sensorId;
+
+            SensorOption option = SensorOption.None;
+            if (!string.IsNullOrEmpty(sensorId))
+            {
+                option = _sensorOptions.FirstOrDefault(o => o.Identifier == sensorId) ?? SensorOption.None;
+                if (option.Sensor != null)
+                {
+                    dial.Sensor = option.Sensor;
+                    dial.SensorName = option.Name;
+                }
+                else
+                {
+                    Log.Warning("Sensor {Sensor} configured for dial {Uid} was not found on this computer", sensorId, info.uid);
+                }
+            }
+
+            if (info.backlight != null)
+            {
+                dial.ServerBacklight = ((int)Math.Round(info.backlight.red), (int)Math.Round(info.backlight.green), (int)Math.Round(info.backlight.blue));
+            }
+
+            var vm = new DialViewModel(dial, this, _sensorOptionsView, _ui) { SelectedSensorOption = option };
+            if (!dial.UsesRules && dial.FixedColor.HasValue)
+            {
+                var (r, g, b) = dial.FixedColor.Value;
+                vm.SetBacklight(r, g, b);
+            }
+            else if (info.backlight != null)
+            {
+                vm.SetBacklight((int)Math.Round(info.backlight.red), (int)Math.Round(info.backlight.green), (int)Math.Round(info.backlight.blue));
+            }
+            return vm;
         }
 
-        public void ResumeDialUpdate()
+        private async Task RefreshDialImageAsync(DialViewModel vm)
         {
-            gDialUpdatePaused = false;
-            btnToggleDialUpdate.Content = new PackIcon { Kind = PackIconKind.Pause };
-
+            try
+            {
+                byte[]? bytes = await _server.GetDialImageAsync(vm.Uid, _shutdownCts.Token);
+                vm.SetDisplayImage(bytes);   // null -> blank
+            }
+            catch (OperationCanceledException)
+            {
+                // shutting down
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not fetch image for dial {Uid}", vm.Uid);
+                vm.SetDisplayImage(null);
+            }
         }
 
-        private void btnRefreshDials_click(object sender, RoutedEventArgs e)
+        // ================================================================== background update loop
+
+        private void StartUpdateLoop()
         {
-            RefreshDialList();
+            _loopCts?.Dispose();
+            _loopCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
+            var ct = _loopCts.Token;
+            float period = ConfigManager.GetDialUpdatePeriod();
+            _updateLoop = Task.Run(() => DialUpdateLoopAsync(TimeSpan.FromSeconds(period), ct));
+            Log.Information("Dials updated every {Period} seconds.", period);
+        }
+
+        private async Task StopUpdateLoopAsync()
+        {
+            _loopCts?.Cancel();
+            if (_updateLoop != null)
+            {
+                try { await _updateLoop.WaitAsync(TimeSpan.FromSeconds(3)); } catch { /* cancelled / timed out */ }
+            }
+            _updateLoop = null;
+        }
+
+        private async Task DialUpdateLoopAsync(TimeSpan period, CancellationToken ct)
+        {
+            using var timer = new PeriodicTimer(period);
+
+            TimeSpan backoff = TimeSpan.FromSeconds(1);
+            DateTime nextServerCheck = DateTime.MinValue;
+
+            try
+            {
+                while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+                {
+                    try
+                    {
+                        var server = _server;
+                        DateTime now = DateTime.UtcNow;
+
+                        // --- (Re)connect when offline, and periodically refresh the dial list ---
+                        if (!server.IsOnline || now >= nextServerCheck)
+                        {
+                            if (!server.IsOnline && now < nextServerCheck)
+                            {
+                                continue;
+                            }
+
+                            bool wasOnline = server.IsOnline;
+                            bool ok = await server.RefreshDialListAsync(ct).ConfigureAwait(false);
+                            _ = Dispatcher.InvokeAsync(UpdateStatus);
+
+                            if (!ok)
+                            {
+                                backoff = TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxReconnectBackoff.Ticks));
+                                nextServerCheck = now + backoff;
+                                continue;
+                            }
+
+                            backoff = TimeSpan.FromSeconds(1);
+                            nextServerCheck = now + DialListRefreshInterval;
+
+                            var serverDials = server.GetDialList();
+                            bool listChanged = !serverDials.Select(d => d.uid).OrderBy(u => u)
+                                                .SequenceEqual(_dials.Select(d => d.UID).OrderBy(u => u));
+                            if (listChanged || !wasOnline)
+                            {
+                                // Re-fetch images after a reconnect: the server may have restarted
+                                await Dispatcher.InvokeAsync(() => ApplyDialList(serverDials, fetchAllImages: !wasOnline));
+                            }
+
+                            if (!wasOnline)
+                            {
+                                foreach (var d in _dials) d.ResetSentState();
+                            }
+                        }
+
+                        if (_paused) continue;
+
+                        await UpdateDialsOnceAsync(server, ct).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Never let one bad iteration kill the loop
+                        Log.Error(ex, "Error in dial update loop");
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // stopped
+            }
+
+            Log.Debug("Dial update loop stopped");
+        }
+
+        private async Task UpdateDialsOnceAsync(VU1_Server server, CancellationToken ct)
+        {
+            var dials = _dials;  // snapshot
+            var active = dials.Where(d => d.Sensor != null).ToList();
+
+            // Dials without a metric can still have a fixed backlight colour
+            foreach (var dial in dials.Where(d => d.Sensor == null))
+            {
+                await SendBacklightIfNeededAsync(server, dial, dial.DesiredBacklight(0), ct).ConfigureAwait(false);
+                if (!server.IsOnline) return;
+            }
+
+            if (active.Count == 0)
+            {
+                _ = Dispatcher.InvokeAsync(() => { foreach (var vm in _dialVms) vm.RefreshLive(); });
+                return;
+            }
+
+            // Update each piece of hardware once, not once per dial
+            SensorManager.UpdateSensors(active.Select(d => d.Sensor!));
+
+            foreach (var dial in active)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var sensor = dial.Sensor;
+                if (sensor == null) continue;
+
+                float raw = sensor.Value ?? 0;
+                int dialValue = DialMath.ScaleToPercent(raw, dial.ScaleMin, dial.ScaleMax);
+                dial.Value = dialValue;
+                DateTime now = DateTime.UtcNow;
+
+                // Only send when changed (or periodically as keep-alive)
+                if (dialValue != dial.LastSentValue || now - dial.LastValueSentUtc > KeepAliveInterval)
+                {
+                    Log.Verbose("Dial:{Uid} set to {Value}% [Sensor: {Sensor}] - Raw value: {Raw}", dial.UID, dialValue, sensor.Identifier, raw);
+                    if (await server.UpdateDialValueAsync(dial.UID, dialValue, ct).ConfigureAwait(false))
+                    {
+                        dial.LastSentValue = dialValue;
+                        dial.LastValueSentUtc = now;
+                    }
+                }
+
+                // Backlight: colour rules (when on) or the fixed colour
+                await SendBacklightIfNeededAsync(server, dial, dial.DesiredBacklight(dialValue), ct).ConfigureAwait(false);
+
+                // Don't hammer an unreachable server with the remaining dials
+                if (!server.IsOnline) break;
+            }
+
+            _ = Dispatcher.InvokeAsync(() =>
+            {
+                foreach (var vm in _dialVms) vm.RefreshLive();
+            });
+        }
+
+        private static async Task SendBacklightIfNeededAsync(VU1_Server server, ClassDialGUI dial, (int r, int g, int b)? desired, CancellationToken ct)
+        {
+            if (!desired.HasValue) return;   // nothing configured: leave the backlight alone
+            if (dial.Identifying) return;    // identify mode owns the backlight right now
+
+            var color = desired.Value;
+            DateTime now = DateTime.UtcNow;
+            if (dial.LastSentBacklight.HasValue && dial.LastSentBacklight.Value == color && now - dial.LastBacklightSentUtc <= KeepAliveInterval)
+            {
+                return;
+            }
+
+            if (await server.UpdateDialBacklightAsync(dial.UID, color.r, color.g, color.b, ct: ct).ConfigureAwait(false))
+            {
+                dial.LastSentBacklight = color;
+                dial.LastBacklightSentUtc = now;
+            }
+        }
+
+        // ================================================================== IDialHost (actions from dial cards)
+
+        void IDialHost.ApplySensor(DialViewModel vm, SensorOption option)
+        {
+            var dial = vm.Dial;
+            dial.Sensor = option.Sensor;
+            dial.SensorIdentifier = option.Identifier;
+            dial.SensorName = option.Sensor?.Name ?? "";
+            dial.ResetSentState();
+            vm.SelectedSensorOption = option;
+
+            ConfigManager.UpdateDialConfig(dial, true);
+            Log.Information("Dial {Uid} now shows {Sensor}", dial.UID, option.Identifier);
+
+            if (option.Sensor == null)
+            {
+                // Unassigned: park the needle at 0
+                dial.Value = 0;
+                _ = _server.UpdateDialValueAsync(dial.UID, 0);
+            }
+            vm.RefreshLive();
+        }
+
+        (float min, float max) IDialHost.ApplyScale(DialViewModel vm, string minText, string maxText)
+        {
+            var dial = vm.Dial;
+            float min = ParseFloat(minText, dial.ScaleMin);
+            float max = ParseFloat(maxText, dial.ScaleMax);
+            if (min > max) (min, max) = (max, min);
+
+            if (min != dial.ScaleMin || max != dial.ScaleMax)
+            {
+                dial.ScaleMin = min;
+                dial.ScaleMax = max;
+                dial.ResetSentState();
+                ConfigManager.UpdateDialConfig(dial, true);
+                Log.Information("Dial {Uid} scaling set to {Min}..{Max}", dial.UID, min, max);
+            }
+            return (min, max);
+        }
+
+        async Task IDialHost.RenameAsync(DialViewModel vm, string newName)
+        {
+            string oldName = vm.Name;
+            vm.Name = newName;   // optimistic
+
+            if (await _server.UpdateDialNameAsync(vm.Uid, newName))
+            {
+                vm.Dial.FriendlyName = newName;
+            }
+            else
+            {
+                vm.Name = oldName;
+                MessageBox.Show(this, "Could not rename the dial. Is the VU1 server running?", "VU1 Demo App",
+                                MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        void IDialHost.OpenImageEditor(DialViewModel vm)
+        {
+            var editor = new DialImageEditorWindow(_server, ConfigManager, vm.Dial) { Owner = this };
+            editor.ShowDialog();
+
+            // Show whatever is on the dial now
+            _ = RefreshDialImageAsync(vm);
+        }
+
+        void IDialHost.OpenBacklight(DialViewModel vm)
+        {
+            var window = new BacklightWindow(
+                vm.Dial,
+                _dialVms.Select(v => v.Dial).ToList(),
+                ConfigManager,
+                async (r, g, b) =>
+                {
+                    if (await _server.UpdateDialBacklightAsync(vm.Uid, r, g, b))
+                    {
+                        vm.Dial.LastSentBacklight = (r, g, b);
+                        vm.Dial.LastBacklightSentUtc = DateTime.UtcNow;
+                        vm.SetBacklight(r, g, b);
+                        return true;
+                    }
+                    return false;
+                })
+            { Owner = this };
+            window.ShowDialog();
+
+            // Rules may have been copied to other dials as well
+            foreach (var v in _dialVms)
+            {
+                v.Dial.ResetSentState();
+                v.RefreshBacklightMode();
+            }
+        }
+
+        async void IDialHost.Identify(DialViewModel vm)
+        {
+            var dial = vm.Dial;
+            if (dial.Identifying) return;
+
+            var server = _server;
+            var (ir, ig, ib) = ConfigManager.GetIdentifyColor();
+            int durationMs = ConfigManager.GetIdentifyDurationMs();
+
+            // What to go back to afterwards
+            var previous = dial.LastSentBacklight;
+            var previousFromServer = dial.ServerBacklight;
+
+            dial.Identifying = true;
+            vm.IsIdentifying = true;
+            vm.SetBacklight(ir, ig, ib);
+            Log.Information("Identify dial {Uid} for {Ms} ms", dial.UID, durationMs);
+
+            try
+            {
+                await server.UpdateDialBacklightAsync(dial.UID, ir, ig, ib);
+                await Task.Delay(durationMs);
+
+                // Restore: current rule / fixed colour if configured, otherwise the colour from before
+                var restore = dial.DesiredBacklight(dial.Value) ?? previous;
+                if (restore.HasValue)
+                {
+                    var (r, g, b) = restore.Value;
+                    if (await server.UpdateDialBacklightAsync(dial.UID, r, g, b))
+                    {
+                        dial.LastSentBacklight = restore;
+                        dial.LastBacklightSentUtc = DateTime.UtcNow;
+                    }
+                    vm.SetBacklight(r, g, b);
+                }
+                else if (previousFromServer.HasValue)
+                {
+                    // Values reported by the server are already percentages
+                    var (r, g, b) = previousFromServer.Value;
+                    await server.UpdateDialBacklightAsync(dial.UID, r, g, b, values_as_percent: true);
+                    vm.SetBacklight(r, g, b);
+                }
+                else
+                {
+                    await server.UpdateDialBacklightAsync(dial.UID, 0, 0, 0);
+                    vm.SetBacklight(0, 0, 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Identify failed for dial {Uid}", dial.UID);
+            }
+            finally
+            {
+                dial.Identifying = false;
+                vm.IsIdentifying = false;
+            }
+        }
+
+        void IDialHost.ToggleMetrics()
+        {
+            _ui.MetricsExpanded = !_ui.MetricsExpanded;
+            ConfigManager.SetMetricsExpanded(_ui.MetricsExpanded);
+        }
+
+        void IDialHost.SetFinish(DialViewModel vm, string finish) => SetFinish(new[] { vm }, finish);
+
+        private void SetFinish(IEnumerable<DialViewModel> vms, string finish)
+        {
+            foreach (var vm in vms)
+            {
+                vm.Dial.Finish = ClassConfigurationManager.NormalizeFinish(finish);
+                vm.RefreshFinish();
+                ConfigManager.UpdateDialConfig(vm.Dial, false);
+            }
+            ConfigManager.SaveConfigFile();
+        }
+
+        void IDialHost.MoveDial(DialViewModel source, DialViewModel target)
+        {
+            int from = _dialVms.IndexOf(source);
+            int to = _dialVms.IndexOf(target);
+            if (from < 0 || to < 0 || from == to) return;
+
+            _dialVms.Move(from, to);
+            ConfigManager.SetDialOrder(_dialVms.Select(v => v.Uid));
+            Log.Information("Dial {Uid} moved to position {Pos}", source.Uid, to + 1);
+        }
+
+        private static float ParseFloat(string text, float fallback) =>
+            float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) && float.IsFinite(v) ? v : fallback;
+
+        // ================================================================== status bar buttons
+
+        private async void btnRefreshDials_click(object sender, RoutedEventArgs e)
+        {
+            await RefreshDialListAsync();
         }
 
         private void btnToggleDialUpdate_click(object sender, RoutedEventArgs e)
         {
-            if(gDialUpdatePaused)
+            _paused = !_paused;
+            btnToggleDialUpdate.Tag = FindResource(_paused ? "IconPlay" : "IconPause");
+            btnToggleDialUpdate.ToolTip = _paused ? "Resume sending values to the dials" : "Pause sending values to the dials";
+            if (!_paused)
             {
-                ResumeDialUpdate();
+                foreach (var d in _dials) d.ResetSentState();
             }
-            else
-            {
-                PauseDialUpdate();
-            }
-        }
-
-        private float ParseMinMaxValue(String value, float def)
-        {
-            float fValue = def;
-            float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out fValue);
-            return fValue;
-        }
-
-        private void btnSaveDialSettings_click(object sender, RoutedEventArgs e)
-        {
-            if (gCurrentlySelectedDial == null)
-            {
-                return;
-            }
-
-            // Prepare data
-            string newName = txtlSelectedDialName.Text;
-            float minValue = ParseMinMaxValue(txtMinValue.Text, 100);
-            float maxValue = ParseMinMaxValue(txtMaxValue.Text, 100);
-
-            // Minimum can not be bigger than maximum
-            if (minValue > maxValue)
-            {
-                float tpm = minValue;
-                minValue = maxValue;
-                maxValue = tpm;
-            }
-            
-            // Update currently selected sensor
-            gCurrentlySelectedDial.FriendlyName = newName;
-            gCurrentlySelectedDial.ScaleMin = minValue;
-            gCurrentlySelectedDial.ScaleMax = maxValue;
-
-            // API Call to update dial name
-            if (DialServer.UpdateDialName(gCurrentlySelectedDial.UID, newName))
-            {
-                lbDials.Items.SortDescriptions.Clear();
-                lbDials.Items.SortDescriptions.Add(new System.ComponentModel.SortDescription("FriendlyName", System.ComponentModel.ListSortDirection.Ascending));
-                lbDials.Items.Refresh();
-            }
-
-            // Update config/UI only if:
-            // - valid sensor is selected from the drop-down
-            // - valud sensor is stored in config, then update only scaling values
-            if (cbDialMetric.SelectedItem != null || gCurrentlySelectedDial.Sensor != null)
-            {
-                // New sensor is selected
-                if (cbDialMetric.SelectedItem != null)
-                {
-                    //gCurrentlySelectedDial.Sensor = computerSensors[cbDialMetric.SelectedIndex].Sensor;
-                    VU1_Sensor selectedSensor = cbDialMetric.SelectedItem as VU1_Sensor;
-                    gCurrentlySelectedDial.Sensor = selectedSensor.Sensor;
-                    lblCurrentMetric.Content = String.Format("{0} - {1} - {2}", gCurrentlySelectedDial.Sensor.Name.ToString(), gCurrentlySelectedDial.Sensor.SensorType.ToString(), gCurrentlySelectedDial.Sensor.Identifier.ToString());
-                }
-
-                lblCurrentValue.Content = gCurrentlySelectedDial.Sensor.Value.ToString();
-                lblScalingMin.Content = gCurrentlySelectedDial.ScaleMin.ToString();
-                lblScalingMax.Content = gCurrentlySelectedDial.ScaleMax.ToString();
-
-                // Update config file
-                ConfigManager.UpdateDialConfig(gCurrentlySelectedDial, true);
-            }
-            
-        }
-
-        private void cbDialMetricCategory_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (cbDialMetricCategory.SelectedItem == null)
-            {
-                return;
-            }
-
-            List<VU1_Sensor> filtered = new List<VU1_Sensor> { };
-
-            foreach (var sens in computerSensors)
-            {
-
-                if (sens.Sensor.SensorType.ToString().Contains(cbDialMetricCategory.SelectedItem.ToString()))
-                {
-                    filtered.Add(sens);
-                }
-            }
-
-            cbDialMetric.ItemsSource = filtered;
-            cbDialMetric.Items.Refresh();
-        }
-
-        private void btnChangeImage_click(object sender, RoutedEventArgs e)
-        {
-            if (gCurrentlySelectedDial == null || gCurrentlySelectedDial.UID == "")
-            {
-                return;
-            }
-
-            //Create a new instance of openFileDialog
-            System.Windows.Forms.OpenFileDialog res = new System.Windows.Forms.OpenFileDialog();
-
-            //Filter
-            res.Filter = "Image Files|*.jpg;*.jpeg;*.png";
-
-            //When the user select the file
-            if (res.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            {
-                DialServer.UpdateDialBackgroundImage(gCurrentlySelectedDial.UID, res.FileName);
-            }
-            
-        }
-
-        private void btnSetDialRules_click(object sender, RoutedEventArgs e)
-        {
-            if (gCurrentlySelectedDial == null || gCurrentlySelectedDial.UID == "")
-            {
-                return;
-            }
-
-            ThresholdsWindow thresholdsWindow = new ThresholdsWindow();
-            thresholdsWindow.Owner = this;
-            thresholdsWindow.SetMainWindow(this);
-            thresholdsWindow.SetConfigManager(ConfigManager);
-            thresholdsWindow.ShowDialog();
-        }
-
-        private void btnChangeDialColor_click(object sender, RoutedEventArgs e)
-        {
-            if (gCurrentlySelectedDial == null || gCurrentlySelectedDial.UID == "")
-            {
-                return;
-            }
-
-            SetColorWindow setColorWindow = new SetColorWindow();
-            setColorWindow.Owner = this;
-            setColorWindow.SetMainWindow(this);
-            setColorWindow.Show();
-        }
-
-        private void chRunOnSystemStart(object sender, RoutedEventArgs e)
-        {
-
-            RegistryKey rk = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-
-            if (chRunOnStartup.IsChecked == true)
-            {
-                rk.SetValue(VU1_Registry_Key, System.Windows.Forms.Application.ExecutablePath);
-            }
-
-            else
-            {
-                rk.DeleteValue(VU1_Registry_Key, false);
-            }
-
-        }
-
-        public void Selected_Dial_Change_Color(int red, int green, int blue)
-        {
-            DialServer.UpdateDialBacklight(gCurrentlySelectedDial.UID, red, green, blue);
+            UpdateStatus();
         }
 
         private void btnAbout_click(object sender, RoutedEventArgs e)
         {
-            AboutWindow aboutWindow = new AboutWindow();
-            aboutWindow.Show();
+            new AboutWindow { Owner = this }.ShowDialog();
         }
 
-
-        void NumericTextBoxInput(object sender, TextCompositionEventArgs e)
+        private async void btnSettings_click(object sender, RoutedEventArgs e)
         {
-            var regex = new Regex(@"^[0-9]*(?:\.[0-9]*)?$");
-
-            // Limit lenght to 6 characters
-            if (((System.Windows.Controls.TextBox)sender).Text.Length >= 6)
+            var settings = new SettingsWindow(ConfigManager, finish => SetFinish(_dialVms.ToList(), finish)) { Owner = this };
+            if (settings.ShowDialog() == true)
             {
-                e.Handled = true;
-            }
-            // Regex match
-            else if (regex.IsMatch(e.Text) && !(e.Text == "." && ((System.Windows.Controls.TextBox)sender).Text.Contains(e.Text)))
-            {
-                e.Handled = false;
-            }
-            else
-            {
-                e.Handled = true;
+                await ReconnectAsync();
             }
         }
 
-        public void SaveDialConfig()
+        /// <summary>Applies new server settings: replaces the server client and restarts the loop.</summary>
+        private async Task ReconnectAsync()
         {
-            ConfigManager.SaveConfigFile();
+            Log.Information("Applying new server settings");
+            await StopUpdateLoopAsync();
+
+            var old = _server;
+            _server = CreateServer();
+            _hasConnectedOnce = false;
+            old.Dispose();
+
+            foreach (var d in _dials) d.ResetSentState();
+            UpdateStatus();
+
+            await RefreshDialListAsync();
+            StartUpdateLoop();
         }
 
+        // ================================================================== shutdown
 
-        private void SetAllDialValue(int val)
+        private void mainWindow_Closing(object sender, CancelEventArgs e)
         {
-            foreach (ClassDialGUI dial in gDials)
+            if (_isClosing) return;
+            _isClosing = true;
+
+            Log.Information("Main window closing");
+
+            // Stop the update loop first so it doesn't overwrite the reset below
+            _shutdownCts.Cancel();
+            try { _updateLoop?.Wait(TimeSpan.FromSeconds(2)); } catch { /* cancelled */ }
+
+            // Reset each dial, but never hang the shutdown for more than a few seconds
+            var server = _server;
+            if (server.IsOnline)
             {
-                DialServer.UpdateDialValue(dial.UID, val);
-            }
-        }
-
-        private void RefreshDialMetric(ClassDialGUI dial)
-        {
-            // Refresh dial sensor value
-            if (dial.Sensor != null)
-            {
-                // Initial dial value
-                int dialValue = 0;
-                int dialRed = 0;
-                int dialGreen = 0;
-                int dialBlue = 0;
-                bool bBacklightUpdate = false;
-
-                // Reload sensor
-                dial.Sensor.Hardware.Update();
-
-                // Fetch sensor value
-                float fSensorValue = dial.Sensor.Value ?? 0;
-
-                // Edge case: If for whatever reason scale min and scale max are the same, we will show 0%
-                // Value is less than scale min means dial shows 0%
-                if ( (dial.ScaleMin == dial.ScaleMax) || (fSensorValue <= dial.ScaleMin) )
+                var dials = _dials.ToList();
+                var reset = Task.Run(async () =>
                 {
-                    dialValue = 0;
-                }
-                // Value is greater than scale max means dial shows 100%
-                else if (fSensorValue >= dial.ScaleMax)
-                {
-                    dialValue = 100;
-                }
-                // Avoid division by zero
-                else if (dial.ScaleMax == 0)
-                {
-                    dialValue = 100;
-                }
-                // Value is in between scale min and max. Convert to appropriate percent value
-                else
-                {
-                    float scaledValue = ((fSensorValue - dial.ScaleMin) / (dial.ScaleMax - dial.ScaleMin)) * 100;
-                    if (scaledValue < 0)
+                    foreach (ClassDialGUI dial in dials)
                     {
-                        Log.Verbose("Clipping scaled value to 0");
-                        scaledValue = 0;
+                        await server.UpdateDialValueAsync(dial.UID, 0).ConfigureAwait(false);
+                        await server.UpdateDialBacklightAsync(dial.UID, 0, 0, 0).ConfigureAwait(false);
                     }
-                    else if (scaledValue > 100)
-                    {
-                        Log.Verbose("Clipping scaled value to 100");
-                        scaledValue = 100;
-                    }
-
-                    dialValue = (int)Math.Round(scaledValue);
-                }
-
-                // Update backlight based on defined thresholds
-                if (dial.Thresholds != null && dial.Thresholds.Count > 0)
-                {
-//                    ClassDialThreshold match = dial.Thresholds.FindLast(item => item.Threshold <= dialValue);
-                    ClassDialThreshold match = dial.Thresholds.Find(item => item.Threshold >= dialValue);
-
-                    if (match != null)
-                    {
-                        dialRed = match.BacklightRed;
-                        dialGreen = match.BacklightGreen;
-                        dialBlue = match.BacklightBlue;
-                        bBacklightUpdate = true;
-                    }
-                }
-
-
-                // Check if we need to update GUI
-                if (gCurrentlySelectedDial.Sensor != null)
-                {
-                    if (gCurrentlySelectedDial.Sensor.Identifier == dial.Sensor.Identifier)
-                    {
-                        lblCurrentPercent.Content = String.Format("{0}%", dialValue);
-                        lblCurrentValue.Content = String.Format("[{0:0.000}]", fSensorValue);
-                    }
-                }
-
-                Log.Verbose(String.Format("Dial:{0} set to {1}% [Sensor: {2}] - Raw value: {1}", dial.UID, dialValue, dial.Sensor.Identifier, fSensorValue));
-                DialServer.UpdateDialValue(dial.UID, dialValue);
-
-                if(bBacklightUpdate)
-                {
-                    DialServer.UpdateDialBacklight(dial.UID, dialRed, dialGreen, dialBlue);
-                    bBacklightUpdate = false;
-                }
+                });
+                try { reset.Wait(TimeSpan.FromSeconds(3)); } catch (Exception ex) { Log.Warning(ex, "Dial reset on exit failed"); }
             }
-        }
 
-        public void sortDialThresholds()
-        {
-            foreach (ClassDialGUI dial in gDials)
+            if (_notifyIcon != null)
             {
-                dial.Thresholds = dial.Thresholds.OrderBy(item => item.Threshold).ToList();
-            }
-        }
-
-
-        private void mainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
-        {
-            // Reset each dial
-            foreach (ClassDialGUI dial in gDials)
-            {
-                DialServer.UpdateDialValue(dial.UID, 0);
-                DialServer.UpdateDialBacklight(dial.UID, 0, 0, 0);
-            }
-        }
-
-        public static bool RegistryValueExists(string hive_HKLM_or_HKCU, string registryRoot, string valueName)
-        {
-            RegistryKey root;
-            switch (hive_HKLM_or_HKCU.ToUpper())
-            {
-                case "HKLM":
-                    root = Registry.LocalMachine.OpenSubKey(registryRoot, false);
-                    break;
-                case "HKCU":
-                    root = Registry.CurrentUser.OpenSubKey(registryRoot, false);
-                    break;
-                default:
-                    throw new System.InvalidOperationException("parameter registryRoot must be either \"HKLM\" or \"HKCU\"");
+                _notifyIcon.Visible = false;   // otherwise a "ghost" icon stays in the tray
+                _notifyIcon.Dispose();
+                _notifyIcon = null;
             }
 
-            return root.GetValue(valueName) != null;
+            SensorManager.Dispose();
+            server.Dispose();
         }
-
-
-        private void TimerTick(object sender, EventArgs e)
-        {
-            // Don't run if pause has been requested
-            if (gDialUpdatePaused) return;
-
-            // Update each dial sensor
-            foreach (ClassDialGUI dial in gDials)
-            {
-                if (dial.Sensor != null)
-                {
-                    RefreshDialMetric(dial);
-                }
-            }
-        }
-
-
-        static void OnProcessExit(object sender, EventArgs e)
-        {
-            Log.CloseAndFlush();
-        }
-
     }
 }
