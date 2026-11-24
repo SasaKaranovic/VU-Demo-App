@@ -32,7 +32,12 @@ namespace VU1WPF
 
         public ClassConfigurationManager ConfigManager;
         private readonly VU1_SensorManager SensorManager;
-        private volatile VU1_Server _server;
+        // External VU1 server (HTTP) or the built-in server (USB) - see IDialBackend
+        private volatile IDialBackend _server;
+        // Built-in mode was selected, but an external server was already running, so that one is used
+        private bool _usingRunningExternalServer;
+        // The "start the built-in server?" offer is shown at most once per session
+        private bool _builtInOffered;
 
         // UI collection (UI thread only) and an immutable snapshot for the background loop
         private readonly ObservableCollection<DialViewModel> _dialVms = new();
@@ -56,7 +61,8 @@ namespace VU1WPF
             InitializeComponent();
 
             ConfigManager = new ClassConfigurationManager();
-            _server = CreateServer();
+            // Start with the external server; MainWindow_Loaded picks the final backend
+            _server = CreateExternalServer();
 
             SensorManager = new VU1_SensorManager();
             _sensorOptions = new List<SensorOption> { SensorOption.None };
@@ -79,12 +85,96 @@ namespace VU1WPF
             SizeChanged += (s, e) => KeepOnScreen();
         }
 
-        private VU1_Server CreateServer()
+        // ================================================================== server backend (external / built-in)
+
+        private IDialBackend CreateExternalServer() =>
+            Hook(new VU1_Server(ConfigManager.GetServerUrl(), ConfigManager.GetMasterKey()));
+
+#if BUILTIN_SERVER
+        private IDialBackend CreateBuiltInServer() =>
+            Hook(new BuiltInServer.BuiltInDialServer(ConfigManager.GetHubPort(), ConfigManager.GetExternalServerFolder()));
+#endif
+
+        private IDialBackend Hook(IDialBackend server)
         {
-            var server = new VU1_Server(ConfigManager.GetServerUrl(), ConfigManager.GetMasterKey());
             server.ConnectionStateChanged += online => Dispatcher.InvokeAsync(() => OnConnectionStateChanged(server, online));
             return server;
         }
+
+        /// <summary>True when the built-in server is compiled in (EnableBuiltInServer in the .csproj).</summary>
+        internal static bool BuiltInServerAvailable =>
+#if BUILTIN_SERVER
+            true;
+#else
+            false;
+#endif
+
+        /// <summary>
+        /// Picks the backend for the configured mode:
+        ///  - external: the external server (an offer to start the built-in one follows if it can't be reached)
+        ///  - built-in: an already running external server is used if there is one, otherwise the built-in server starts
+        /// </summary>
+        private async Task<IDialBackend> CreateBackendForModeAsync(IDialBackend? probe = null)
+        {
+            _usingRunningExternalServer = false;
+            var external = probe ?? CreateExternalServer();
+
+#if BUILTIN_SERVER
+            if (ConfigManager.GetServerMode() == ClassConfigurationManager.ServerModeBuiltIn)
+            {
+                if (await external.RefreshDialListAsync(_shutdownCts.Token))
+                {
+                    Log.Information("Built-in server selected, but an external VU1 server is running at {Url}; using it", external.ServerUrl);
+                    _usingRunningExternalServer = true;
+                    return external;
+                }
+
+                external.Dispose();
+                Log.Information("Starting the built-in VU1 server");
+                return CreateBuiltInServer();
+            }
+#else
+            await Task.CompletedTask;
+#endif
+            return external;
+        }
+
+        /// <summary>Replaces the current backend (stops the update loop while switching).</summary>
+        private async Task SwitchBackendAsync(Func<Task<IDialBackend>> create)
+        {
+            await StopUpdateLoopAsync();
+
+            var old = _server;
+            old.Dispose();   // the built-in server releases the hub's COM port here
+            _server = await create();
+            _hasConnectedOnce = false;
+
+            foreach (var d in _dials) d.ResetSentState();
+            UpdateStatus();
+
+            await RefreshDialListAsync();
+            StartUpdateLoop();
+        }
+
+#if BUILTIN_SERVER
+        /// <summary>External server unreachable: offer to start the built-in server (once per session).</summary>
+        private async Task OfferBuiltInServerAsync()
+        {
+            if (_builtInOffered || _isClosing || _server.IsOnline || _server.IsBuiltIn) return;
+            _builtInOffered = true;
+
+            var dialog = new ServerChoiceWindow(_server.ServerUrl) { Owner = this };
+            if (dialog.ShowDialog() != true || _server.IsOnline) return;
+
+            if (dialog.RememberChoice)
+            {
+                ConfigManager.SetServerMode(ClassConfigurationManager.ServerModeBuiltIn);
+            }
+
+            Log.Information("User chose to start the built-in VU1 server");
+            await SwitchBackendAsync(() => Task.FromResult(CreateBuiltInServer()));
+        }
+#endif
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
@@ -96,8 +186,50 @@ namespace VU1WPF
                 MessageBox.Show(this, ConfigManager.LoadWarning, "VU1 Demo App", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
+            ShowPawnIoNoticeIfNeeded();
+
+            // Final backend for the configured mode (reuses the external client as the probe)
+            var initial = _server;
+            var backend = await CreateBackendForModeAsync(initial);
+            if (!ReferenceEquals(backend, initial))
+            {
+                _server = backend;
+                UpdateStatus();
+            }
+
             await RefreshDialListAsync();
             StartUpdateLoop();
+
+#if BUILTIN_SERVER
+            if (!_server.IsOnline && !_server.IsBuiltIn)
+            {
+                await OfferBuiltInServerAsync();
+            }
+#endif
+        }
+
+        // ================================================================== PawnIO notice
+
+        private void ShowPawnIoNoticeIfNeeded()
+        {
+            if (ConfigManager.GetPawnIoNoticeDismissed() || PawnIoCheck.IsInstalled()) return;
+            Log.Warning("PawnIO driver not installed: CPU temperature/power and motherboard sensors will be unavailable");
+            PawnIoBanner.Visibility = Visibility.Visible;
+        }
+
+        private void btnPawnIoDownload_Click(object sender, RoutedEventArgs e) => PawnIoCheck.OpenDownloadPage();
+
+        private void btnPawnIoHelp_Click(object sender, RoutedEventArgs e)
+        {
+            var answer = MessageBox.Show(this, PawnIoCheck.InstallSteps + "\n\nOpen the download page now?", "PawnIO driver",
+                                         MessageBoxButton.YesNo, MessageBoxImage.Information);
+            if (answer == MessageBoxResult.Yes) PawnIoCheck.OpenDownloadPage();
+        }
+
+        private void btnPawnIoDismiss_Click(object sender, RoutedEventArgs e)
+        {
+            PawnIoBanner.Visibility = Visibility.Collapsed;
+            ConfigManager.SetPawnIoNoticeDismissed(true);
         }
 
         private void KeepOnScreen()
@@ -154,11 +286,19 @@ namespace VU1WPF
 
         // ================================================================== status bar
 
-        private void OnConnectionStateChanged(VU1_Server source, bool online)
+        private async void OnConnectionStateChanged(IDialBackend source, bool online)
         {
             if (!ReferenceEquals(source, _server)) return;   // event from a replaced server instance
+            bool firstConnect = online && !_hasConnectedOnce;
             if (online) _hasConnectedOnce = true;
             UpdateStatus();
+
+            // The built-in server comes online in the background: show its dials right away
+            if (online && source.IsBuiltIn)
+            {
+                foreach (var d in _dials) d.ResetSentState();
+                if (firstConnect || _dialVms.Count == 0) await RefreshDialListAsync();
+            }
         }
 
         private void UpdateStatus()
@@ -172,21 +312,23 @@ namespace VU1WPF
             if (server.IsOnline)
             {
                 color = (Color)FindResource("OkColor");
-                title = _paused ? "Connected · paused" : "Connected";
+                title = server.IsBuiltIn ? "Built-in server" : "Connected";
+                if (_paused) title += " · paused";
                 int count = _dialVms.Count;
                 detail = $"{url}  ·  {count} dial{(count == 1 ? "" : "s")}  ·  updating every {ConfigManager.GetDialUpdatePeriod().ToString("0.##", CultureInfo.InvariantCulture)} s";
+                if (_usingRunningExternalServer) detail += "  ·  external server already running";
             }
             else if (server.ConsecutiveFailures < FailuresBeforeOffline)
             {
                 color = (Color)FindResource("WarnColor");
-                title = _hasConnectedOnce ? "Reconnecting…" : "Connecting…";
+                title = server.IsBuiltIn ? "Starting built-in server…" : (_hasConnectedOnce ? "Reconnecting…" : "Connecting…");
                 detail = url;
             }
             else
             {
                 color = (Color)FindResource("DangerColor");
-                title = "Server unreachable";
-                detail = $"{url}  ·  retrying";
+                title = server.IsBuiltIn ? "VU1 hub not available" : "Server unreachable";
+                detail = server.LastError != null ? $"{server.LastError}  ·  retrying" : $"{url}  ·  retrying";
             }
 
             StatusDot.Fill = new SolidColorBrush(color);
@@ -208,12 +350,21 @@ namespace VU1WPF
                 if (_server.IsOnline)
                 {
                     txtEmptyTitle.Text = "No dials found";
-                    txtEmptyDetail.Text = "The VU1 server is running but reports no dials. Check that the dials are connected to the hub.";
+                    txtEmptyDetail.Text = _server.IsBuiltIn
+                        ? "The VU1 hub is connected but reports no dials. Check that the dials are plugged into the hub."
+                        : "The VU1 server is running but reports no dials. Check that the dials are connected to the hub.";
+                }
+                else if (_server.IsBuiltIn)
+                {
+                    txtEmptyTitle.Text = "Can't reach the VU1 hub";
+                    txtEmptyDetail.Text = (_server.LastError ?? "Starting the built-in server…") +
+                                          "\nThe built-in server talks to the hub over USB. Close the VU1 server app if it is running, or switch to the external server in Settings.";
                 }
                 else
                 {
                     txtEmptyTitle.Text = "Can't reach the VU1 server";
-                    txtEmptyDetail.Text = $"Make sure the VU1 server is running at {_server.ServerUrl} and the API key is correct.";
+                    txtEmptyDetail.Text = $"Make sure the VU1 server is running at {_server.ServerUrl} and the API key is correct." +
+                                          (BuiltInServerAvailable ? "\nOr use the built-in server (Settings → VU1 server)." : "");
                 }
             }
         }
@@ -464,7 +615,7 @@ namespace VU1WPF
             Log.Debug("Dial update loop stopped");
         }
 
-        private async Task UpdateDialsOnceAsync(VU1_Server server, CancellationToken ct)
+        private async Task UpdateDialsOnceAsync(IDialBackend server, CancellationToken ct)
         {
             var dials = _dials;  // snapshot
             var active = dials.Where(d => d.Sensor != null).ToList();
@@ -521,7 +672,7 @@ namespace VU1WPF
             });
         }
 
-        private static async Task SendBacklightIfNeededAsync(VU1_Server server, ClassDialGUI dial, (int r, int g, int b)? desired, CancellationToken ct)
+        private static async Task SendBacklightIfNeededAsync(IDialBackend server, ClassDialGUI dial, (int r, int g, int b)? desired, CancellationToken ct)
         {
             if (!desired.HasValue) return;   // nothing configured: leave the backlight alone
             if (dial.Identifying) return;    // identify mode owns the backlight right now
@@ -764,18 +915,15 @@ namespace VU1WPF
         private async Task ReconnectAsync()
         {
             Log.Information("Applying new server settings");
-            await StopUpdateLoopAsync();
 
-            var old = _server;
-            _server = CreateServer();
-            _hasConnectedOnce = false;
-            old.Dispose();
+            await SwitchBackendAsync(() => CreateBackendForModeAsync());
 
-            foreach (var d in _dials) d.ResetSentState();
-            UpdateStatus();
-
-            await RefreshDialListAsync();
-            StartUpdateLoop();
+#if BUILTIN_SERVER
+            if (!_server.IsOnline && !_server.IsBuiltIn)
+            {
+                await OfferBuiltInServerAsync();
+            }
+#endif
         }
 
         // ================================================================== shutdown

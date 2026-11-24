@@ -45,7 +45,7 @@ namespace KR_VU1_Server
     /// - All query values are URL-encoded.
     /// - Calls never throw for network/server errors; they return false/null and log instead.
     /// </summary>
-    internal sealed class VU1_Server : IDisposable
+    internal sealed class VU1_Server : IDialBackend
     {
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -120,6 +120,11 @@ namespace KR_VU1_Server
         }
 
         public string ServerUrl => _baseUrl;
+
+        public bool IsBuiltIn => false;
+
+        public string? LastError => _isOnline ? null : _lastError;
+        private volatile string? _lastError;
 
         public string get_api_url() => _baseUrl + "/api/v0";
 
@@ -344,6 +349,7 @@ namespace KR_VU1_Server
             else
             {
                 int failures = Interlocked.Increment(ref _consecutiveFailures);
+                _lastError = ex?.Message;
                 if (_isOnline || failures == 1)
                 {
                     _isOnline = false;

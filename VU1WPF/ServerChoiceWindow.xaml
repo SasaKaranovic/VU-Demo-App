@@ -1,0 +1,25 @@
+﻿<Window x:Class="VU1WPF.ServerChoiceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Style="{StaticResource DarkWindow}"
+        Background="{StaticResource PanelBrush}"
+        Title="VU1 server not found" Width="480" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+    <StackPanel Margin="24,20,24,20">
+        <TextBlock Text="Can't reach the VU1 server" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock x:Name="txtMessage" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" LineHeight="19"/>
+        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" LineHeight="19" Margin="0,10,0,0"
+                   Text="The app can run its own built-in server instead. It talks to the VU1 hub directly over USB, so the VU1 server app is not needed. Dial names and images from an installed VU1 server are imported automatically."/>
+
+        <CheckBox x:Name="chkRemember" Content="Always use the built-in server" Margin="0,16,0,0"
+                  ToolTip="You can change this later in Settings → VU1 server"/>
+
+        <DockPanel Margin="0,20,0,0" LastChildFill="False">
+            <Button DockPanel.Dock="Right" Content="Start built-in server" Style="{StaticResource PrimaryButton}"
+                    IsDefault="True" Click="btnStart_Click" Margin="8,0,0,0"/>
+            <Button DockPanel.Dock="Right" Content="Keep trying" Style="{StaticResource GhostButton}" IsCancel="True"
+                    ToolTip="Keep waiting for the external VU1 server"/>
+        </DockPanel>
+    </StackPanel>
+</Window>

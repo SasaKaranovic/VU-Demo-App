@@ -29,6 +29,8 @@ namespace VU1WPF
             txtPeriod.Text = config.GetDialUpdatePeriod().ToString("0.##", CultureInfo.InvariantCulture);
             chkRunOnStartup.IsChecked = StartupRegistration.IsEnabled();
 
+            InitServerMode();
+
             _identifyColor = config.GetIdentifyColor();
             txtIdentifyMs.Text = config.GetIdentifyDurationMs().ToString(CultureInfo.InvariantCulture);
             _updatingIdentify = true;
@@ -93,6 +95,82 @@ namespace VU1WPF
         {
             _setAllFinish?.Invoke(FinishTextures.Black);
             ShowResult(true, "All dials set to black.");
+        }
+
+        // ------------------------------------------------------------------ server mode
+
+        private const string AutoDetectPort = "Auto-detect";
+
+        private void InitServerMode()
+        {
+            if (!MainWindow.BuiltInServerAvailable)
+            {
+                panelServerMode.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            bool builtIn = _config.GetServerMode() == ClassConfigurationManager.ServerModeBuiltIn;
+            rbBuiltIn.IsChecked = builtIn;
+            rbExternal.IsChecked = !builtIn;
+            txtImportFolder.Text = _config.GetExternalServerFolder();
+            LoadPorts(_config.GetHubPort());
+            UpdateImportHint();
+        }
+
+        private void ServerMode_Changed(object sender, RoutedEventArgs e)
+        {
+            if (panelBuiltIn == null) return;   // during InitializeComponent
+            panelBuiltIn.Visibility = rbBuiltIn.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void LoadPorts(string selected)
+        {
+            var items = new System.Collections.Generic.List<string> { AutoDetectPort };
+#if BUILTIN_SERVER
+            items.AddRange(BuiltInServer.HubFinder.ListPorts().Select(p => p.ToString()));
+#endif
+            if (!string.IsNullOrWhiteSpace(selected) && !items.Any(i => i.StartsWith(selected + " ", StringComparison.OrdinalIgnoreCase)))
+            {
+                items.Add(selected);   // configured port that isn't present right now
+            }
+            cbHubPort.ItemsSource = items;
+            cbHubPort.SelectedItem = string.IsNullOrWhiteSpace(selected)
+                ? AutoDetectPort
+                : items.FirstOrDefault(i => i == selected || i.StartsWith(selected + " ", StringComparison.OrdinalIgnoreCase)) ?? AutoDetectPort;
+        }
+
+        /// <summary>"COM5 - VU1 hub" -> "COM5"; Auto-detect -> "".</summary>
+        private string SelectedHubPort()
+        {
+            string item = cbHubPort.SelectedItem as string ?? AutoDetectPort;
+            if (item == AutoDetectPort) return "";
+            int space = item.IndexOf(' ');
+            return space > 0 ? item.Substring(0, space) : item;
+        }
+
+        private void btnRefreshPorts_Click(object sender, RoutedEventArgs e) => LoadPorts(SelectedHubPort());
+
+        private void btnBrowseImport_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Select the folder of the installed VU1 server",
+            };
+            if (dialog.ShowDialog(this) == true)
+            {
+                txtImportFolder.Text = dialog.FolderName;
+                UpdateImportHint();
+            }
+        }
+
+        private void UpdateImportHint()
+        {
+#if BUILTIN_SERVER
+            string? found = BuiltInServer.ExternalServerImporter.FindDataFolder(txtImportFolder.Text);
+            txtImportHint.Text = found != null
+                ? $"Found VU1 server data in {found}"
+                : "No installed VU1 server found - nothing to import.";
+#endif
         }
 
         private string ApiKey => _revealed ? txtApiKey.Text : pwdApiKey.Password;
@@ -183,6 +261,11 @@ namespace VU1WPF
             }
 
             _config.SetIdentifySettings(_identifyColor, identifyMs, saveAfter: false);
+            if (MainWindow.BuiltInServerAvailable)
+            {
+                _config.SetServerMode(rbBuiltIn.IsChecked == true ? ClassConfigurationManager.ServerModeBuiltIn : ClassConfigurationManager.ServerModeExternal,
+                                      SelectedHubPort(), txtImportFolder.Text, saveAfter: false);
+            }
             _config.UpdateServerSettings(url, ApiKey, period);
 
             bool wantStartup = chkRunOnStartup.IsChecked == true;

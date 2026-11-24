@@ -36,7 +36,7 @@ namespace VU1WPF
 
         private static readonly Brush SelectedTextBackground = new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0x57, 0x22));
 
-        private readonly VU1_Server _server;
+        private readonly IDialBackend _server;
         private readonly ClassConfigurationManager _config;
         private readonly ClassDialGUI _dial;
         private readonly DesignStore _store = new();
@@ -71,7 +71,7 @@ namespace VU1WPF
         private string? _loadedDesignName;
         private List<string> _templatePaths = new();
 
-        internal DialImageEditorWindow(VU1_Server server, ClassConfigurationManager config, ClassDialGUI dial)
+        internal DialImageEditorWindow(IDialBackend server, ClassConfigurationManager config, ClassDialGUI dial)
         {
             _server = server;
             _config = config;
