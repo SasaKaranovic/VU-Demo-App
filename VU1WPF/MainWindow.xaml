@@ -41,6 +41,25 @@
                 </DockPanel>
             </Border>
 
+            <!-- ============================================================ notices -->
+            <!-- PawnIO driver missing (some sensors unavailable) -->
+            <Border x:Name="PawnIoBanner" DockPanel.Dock="Top" Visibility="Collapsed" Background="#FF231D12"
+                    BorderBrush="#FF4A3A1C" BorderThickness="0,0,0,1" Padding="16,10">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="Download PawnIO" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="btnPawnIoDownload_Click"/>
+                        <Button Content="How to install" Style="{StaticResource GhostButton}" Margin="0,0,8,0" Click="btnPawnIoHelp_Click"/>
+                        <Button Style="{StaticResource IconButton}" Tag="{StaticResource IconClose}" ToolTip="Don't show this again"
+                                Click="btnPawnIoDismiss_Click"/>
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Text="Some sensors need the PawnIO driver" FontWeight="SemiBold" Foreground="{StaticResource WarnBrush}"/>
+                        <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
+                                   Text="CPU temperature, CPU power/clocks and motherboard sensors are read through PawnIO, a small signed driver. Install it, then restart the app."/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
             <!-- ============================================================ status bar -->
             <Border DockPanel.Dock="Bottom" Height="38" Background="#FF111214"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">

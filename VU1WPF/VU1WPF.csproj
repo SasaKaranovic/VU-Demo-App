@@ -11,7 +11,23 @@
     <Authors>$(AssemblyName)</Authors>
     <AssemblyName>VU1-Demo-App</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Built-in VU1 server (talks to the VU1 hub over USB, no external server needed).
+         Set to false to build the app without it: the BuiltInServer folder is then not compiled
+         and the app only works with an external VU1 server. -->
+    <EnableBuiltInServer Condition="'$(EnableBuiltInServer)' == ''">true</EnableBuiltInServer>
+    <DefineConstants Condition="'$(EnableBuiltInServer)' == 'true'">$(DefineConstants);BUILTIN_SERVER</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(EnableBuiltInServer)' != 'true'">
+    <Compile Remove="BuiltInServer\**" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableBuiltInServer)' == 'true'">
+    <!-- Reads the external VU1 server's database (vudials.db) to import dial names / settings -->
+    <!-- 10.0.15+ pulls SQLitePCLRaw 2.1.13+ (older 2.1.x bundles a SQLite affected by CVE-2025-6965) -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Remove="Logger.cs" />
@@ -46,7 +62,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.3" />
+    <!-- 0.9.5+ uses the signed PawnIO driver instead of WinRing0 (which Windows Defender flags).
+         PawnIO itself is installed separately - the app shows a notice when it is missing.
+         Also brings System.IO.Ports / System.Management, used by the built-in server. -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Serilog" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />

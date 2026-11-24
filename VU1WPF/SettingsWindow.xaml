@@ -35,6 +35,37 @@
     </Window.Resources>
 
     <StackPanel Margin="22,18,22,20">
+        <!-- Server mode (hidden when the app is built without the built-in server) -->
+        <StackPanel x:Name="panelServerMode" Margin="0,0,0,16">
+            <TextBlock Text="VU1 server" Style="{StaticResource FieldLabel}"/>
+            <StackPanel Orientation="Horizontal">
+                <RadioButton x:Name="rbExternal" Content="External server" GroupName="ServerMode" Margin="0,0,6,0"
+                             Checked="ServerMode_Changed"
+                             ToolTip="Use a VU1 server that is already running (default). If it can't be reached, the app offers to start the built-in server."/>
+                <RadioButton x:Name="rbBuiltIn" Content="Built-in (USB)" GroupName="ServerMode"
+                             Checked="ServerMode_Changed"
+                             ToolTip="The app talks to the VU1 hub directly over USB; the VU1 server app is not needed. If an external server is already running, that one is used instead."/>
+            </StackPanel>
+
+            <StackPanel x:Name="panelBuiltIn" Margin="0,12,0,0" Visibility="Collapsed">
+                <TextBlock Text="Hub port" Style="{StaticResource FieldLabel}"/>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Tag="{StaticResource IconRefresh}"
+                            Margin="6,0,0,0" ToolTip="Search for ports again" Click="btnRefreshPorts_Click"/>
+                    <ComboBox x:Name="cbHubPort" ToolTip="COM port of the VU1 hub. Auto-detect finds it by its USB ID."/>
+                </DockPanel>
+
+                <TextBlock Text="Import from installed VU1 server" Style="{StaticResource FieldLabel}" Margin="0,12,0,5"/>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Browse…" Style="{StaticResource GhostButton}" Margin="6,0,0,0"
+                            Click="btnBrowseImport_Click"/>
+                    <TextBox x:Name="txtImportFolder" Tag="Auto-detect"
+                             ToolTip="Folder of an installed VU1 server. Its dial names, settings and images are imported every time the built-in server starts."/>
+                </DockPanel>
+                <TextBlock x:Name="txtImportHint" Foreground="{StaticResource MutedBrush}" FontSize="11.5" Margin="0,6,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+        </StackPanel>
+
         <TextBlock Text="VU1 server URL" Style="{StaticResource FieldLabel}"/>
         <TextBox x:Name="txtServerUrl" Tag="http://localhost:5340"
                  ToolTip="Address of the VU1 server, e.g. http://localhost:5340"/>

@@ -47,6 +47,18 @@ namespace VU1WPF
         public List<int> identifyColor { get; set; } = new List<int> { 100, 100, 100 };
         public int identifyDurationMs { get; set; } = 1500;
 
+        /// <summary>"external" (default): use a running VU1 server. "builtin": talk to the hub directly.</summary>
+        public String serverMode { get; set; } = "external";
+
+        /// <summary>Built-in server: COM port of the VU1 hub, empty = detect automatically.</summary>
+        public String hubPort { get; set; } = "";
+
+        /// <summary>Folder of an installed VU1 server whose dial names/images are imported (empty = auto-detect).</summary>
+        public String externalServerFolder { get; set; } = "";
+
+        /// <summary>User dismissed the "PawnIO driver missing" notice.</summary>
+        public bool pawnioNoticeDismissed { get; set; }
+
         /// <summary>Dial UIDs in the order the user arranged them.</summary>
         public List<String> dialOrder { get; set; } = new List<String>();
 

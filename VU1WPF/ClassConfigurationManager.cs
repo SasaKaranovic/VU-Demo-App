@@ -149,6 +149,46 @@ namespace KR_VU1_ConfigurationManager
             if (saveAfter) SaveConfigFile();
         }
 
+        public const string ServerModeExternal = "external";
+        public const string ServerModeBuiltIn = "builtin";
+
+        public string GetServerMode()
+        {
+            lock (_lock) return localConfig.serverMode == ServerModeBuiltIn ? ServerModeBuiltIn : ServerModeExternal;
+        }
+
+        public string GetHubPort()
+        {
+            lock (_lock) return localConfig.hubPort ?? "";
+        }
+
+        public string GetExternalServerFolder()
+        {
+            lock (_lock) return localConfig.externalServerFolder ?? "";
+        }
+
+        public void SetServerMode(string mode, string? hubPort = null, string? externalFolder = null, bool saveAfter = true)
+        {
+            lock (_lock)
+            {
+                localConfig.serverMode = mode == ServerModeBuiltIn ? ServerModeBuiltIn : ServerModeExternal;
+                if (hubPort != null) localConfig.hubPort = hubPort.Trim();
+                if (externalFolder != null) localConfig.externalServerFolder = externalFolder.Trim();
+            }
+            if (saveAfter) SaveConfigFile();
+        }
+
+        public bool GetPawnIoNoticeDismissed()
+        {
+            lock (_lock) return localConfig.pawnioNoticeDismissed;
+        }
+
+        public void SetPawnIoNoticeDismissed(bool dismissed)
+        {
+            lock (_lock) localConfig.pawnioNoticeDismissed = dismissed;
+            SaveConfigFile();
+        }
+
         public bool GetMetricsExpanded()
         {
             lock (_lock) return localConfig.metricsExpanded;
@@ -375,6 +415,9 @@ namespace KR_VU1_ConfigurationManager
                 }
 
                 localConfig.dialOrder ??= new List<string>();
+                localConfig.serverMode = localConfig.serverMode == ServerModeBuiltIn ? ServerModeBuiltIn : ServerModeExternal;
+                localConfig.hubPort ??= "";
+                localConfig.externalServerFolder ??= "";
                 if (localConfig.identifyColor == null || localConfig.identifyColor.Count < 3)
                 {
                     localConfig.identifyColor = new List<int> { 100, 100, 100 };
